@@ -7,11 +7,20 @@ from decimal import Decimal, ROUND_HALF_UP
 REF = re.compile(r'(?<![A-Za-z0-9_])([$]?[A-Za-z]+[$]?[1-9][0-9]*)(?![A-Za-z0-9_])')
 STRING = re.compile(r'("(?:[^"]|"")*")')
 
-def map_refs(formula, transform):
+def map_refs(formula, transform, range_transform=None):
     if not formula.startswith('='): return formula
     parts = STRING.split(formula)
     for i in range(0, len(parts), 2):
-        parts[i] = REF.sub(lambda m: transform(m[0]), parts[i])
+        chunk=parts[i]
+        ranges=[]
+        if range_transform:
+            def capture(m):
+                ranges.append(range_transform(m[1],m[2]))
+                return f'__RANGE_{len(ranges)-1}__'
+            chunk=re.sub(r'([$]?[A-Za-z]+[$]?[1-9][0-9]*)\s*:\s*([$]?[A-Za-z]+[$]?[1-9][0-9]*)',capture,chunk)
+        chunk=REF.sub(lambda m: transform(m[0]),chunk)
+        for j,value in enumerate(ranges): chunk=chunk.replace(f'__RANGE_{j}__',value)
+        parts[i]=chunk
     return ''.join(parts)
 
 def translate(formula, dr, dc):
@@ -30,6 +39,8 @@ def translate(formula, dr, dc):
 def evaluate(formula, lookup):
     from sheet import coordinates
     parts = STRING.split(formula[1:])
+    import json
+    for i in range(1,len(parts),2): parts[i]=json.dumps(parts[i][1:-1].replace('""','"'))
     for i in range(0,len(parts),2):
         part=parts[i]
         part=re.sub(r'([$]?[A-Za-z]+[$]?[1-9][0-9]*)\s*:\s*([$]?[A-Za-z]+[$]?[1-9][0-9]*)',r'RANGE("\1","\2")',part)

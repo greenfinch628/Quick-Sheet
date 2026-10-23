@@ -34,6 +34,14 @@ class StructureTests(unittest.TestCase):
         self.assertTrue(s.styles['A2']['bold'])
         s.structural_edit(0,1,delete=True)
         self.assertEqual(s.display(1,1),'#ERROR')
+    def test_deleted_range_endpoint_shrinks_range(self):
+        s=Sheet()
+        for r in range(3): s.set(r,0,str(r+1))
+        s.set(0,1,'=SUM($A$1:A3)')
+        s.structural_edit(0,2,delete=True)
+        self.assertEqual(s.raw(0,1),'=SUM($A$1:A2)')
+        self.assertEqual(s.value(0,1),3)
+
     def test_column_dimensions_and_filters_move(self):
         s=Sheet(); s.filters={'1':'x'}; s.col_widths={'1':180}
         s.structural_edit(1,0)
@@ -60,6 +68,24 @@ class EditingFormattingTests(unittest.TestCase):
         self.assertEqual(a.hit(SimpleNamespace(x=a.GUTTER+201,y=a.H+51)),(1,1))
         a.select(0,0); a.structure(0)
         self.assertEqual(a.sheet.raw(1,2),'=B2+$A$2')
+    def test_recent_files_and_unsaved_cancellation(self):
+        from unittest.mock import patch
+        from pathlib import Path
+        a=self.app
+        path=Path(self.temp.name)/'data.tsv'; path.write_text('a\tb\n1\t2')
+        a.open_path(str(path))
+        self.assertTrue(a.dirty); self.assertIsNone(a.path)
+        self.assertEqual(a.recent_files[0],str(path.resolve()))
+        with patch('main.messagebox.askyesnocancel',return_value=None): a.new()
+        self.assertEqual(a.sheet.raw(1,1),'2')
+        target=Path(self.temp.name)/'saved.mini'
+        with patch('main.filedialog.asksaveasfilename',return_value=str(target)):
+            self.assertTrue(a.save(True))
+        self.assertFalse(a.dirty)
+        a.close()
+        self.app=test_app.App(state_path=self.state)
+        self.assertEqual(self.app.recent_files[0],str(target.resolve()))
+
     def test_percentage_dates_and_style_roundtrip(self):
         s=Sheet(); s.set(0,0,'0.125'); s.styles['A1']={'format':'Percentage','decimals':1}
         self.assertEqual(s.display(0,0),'12.5%')

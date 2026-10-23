@@ -83,12 +83,27 @@ class Sheet:
             letters,digits=re.fullmatch(r'([A-Z]+)([0-9]+)',address(*point)).groups()
             col,row=re.fullmatch(r'([$]?[A-Za-z]+)([$]?[0-9]+)',ref).groups()
             return ('$' if col.startswith('$') else '')+letters+('$' if row.startswith('$') else '')+digits
+        def range_move(first,last):
+            if not delete: return ref_move(first)+':'+ref_move(last)
+            points=[list(coordinates(ref.replace('$',''))) for ref in (first,last)]
+            low,high=sorted(point[axis] for point in points)
+            end=index+count
+            low_new=low if low<index else low-count if low>=end else index
+            high_new=high-count if high>=end else high if high<index else index-1
+            if low_new>high_new: return '#REF!'
+            refs=[]
+            for ref,point in zip((first,last),points):
+                point[axis]=low_new if point[axis]==low else high_new
+                letters,digits=re.fullmatch(r'([A-Z]+)([0-9]+)',address(*point)).groups()
+                col,row=re.fullmatch(r'([$]?[A-Za-z]+)([$]?[0-9]+)',ref).groups()
+                refs.append(('$' if col.startswith('$') else '')+letters+('$' if row.startswith('$') else '')+digits)
+            return ':'.join(refs)
         for attr in ('cells','styles'):
             result={}
             for key,value in getattr(self,attr).items():
                 point=shift(coordinates(key))
                 if point is not None:
-                    result[address(*point)] = map_refs(value,ref_move) if attr=='cells' else value.copy()
+                    result[address(*point)] = map_refs(value,ref_move,range_move) if attr=='cells' else value.copy()
             setattr(self,attr,result)
         dimensions=self.row_heights if axis==0 else self.col_widths
         updated={}
