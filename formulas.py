@@ -103,7 +103,7 @@ def evaluate(formula, lookup):
                 return [lookup(i,j) for i in range(min(r,rr),max(r,rr)+1) for j in range(min(c,cc),max(c,cc)+1)]
             flat=list(flatten(vals))
             numbers=[v for v in flat if type(v) in (int,float)]
-            if name=='SUM': return sum(numbers)
+            if name in ('SUM','AUTOSUM'): return sum(numbers)
             if name=='AVERAGE': return sum(numbers)/len(numbers)
             if name=='MIN': return min(numbers,default=0)
             if name=='MAX': return max(numbers,default=0)

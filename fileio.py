@@ -66,15 +66,16 @@ def write_sheet(sheet,path):
             ox=excel_module(); wb=ox.Workbook(); ws=wb.active; ws.title='Quick-Sheet'
             from openpyxl.styles import Font, Alignment, PatternFill
             for key in sheet.cells.keys()|sheet.styles.keys():
-                r,c=coordinates(key); raw=sheet.raw(r,c); st=sheet.styles.get(key,{})
+                r,c=coordinates(key); raw=sheet.raw(r,c); st=sheet.style(r,c)
                 target=ws.cell(r+1,c+1)
-                if raw.startswith('=') and st.get('format')!='Text': target.value=raw
+                if raw.startswith('=') and st.get('format')!='Text':
+                    target.value=re.sub(r'^=\s*AUTOSUM(?=\s*\()', '=SUM',raw,flags=re.IGNORECASE)
                 else:
                     value=sheet.value(r,c)
                     target.value=value if value!='' else None
                     if isinstance(value,str): target.data_type='s'
-                decimals=int(st.get('decimals',2)); digits='.'+'0'*decimals if decimals else ''
-                target.number_format={'Text':'@','Decimal':'#,##0'+digits,'Currency':'$#,##0'+digits,'Percentage':'0'+digits+'%','Date':'yyyy-mm-dd','Date/time':'yyyy-mm-dd hh:mm:ss'}.get(st.get('format'),'General')
+                decimals=int(st.get('decimals',0)); digits='.'+'0'*decimals if decimals else ''
+                target.number_format={'Text':'@','Decimal':'#,##0'+digits,'Currency':'$#,##0'+digits,'Percentage':'0'+digits+'%','Date':'yyyy-mm-dd','Date/time':'yyyy-mm-dd hh:mm:ss'}.get(st.get('format'),'0'+digits)
                 target.font=Font(name=sheet.cell_font,size=sheet.cell_size,bold=st.get('bold',False),italic=st.get('italic',False),color=st.get('foreground','#192c3b').lstrip('#'))
                 target.alignment=Alignment(horizontal=st.get('alignment','left'))
                 if st.get('background'): target.fill=PatternFill('solid',fgColor=st['background'].lstrip('#'))

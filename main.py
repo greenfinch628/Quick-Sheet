@@ -2,12 +2,14 @@
 import csv
 import json
 import io
+import sys
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, font, simpledialog, colorchooser
 from sheet import Sheet, address, coordinates
 from formulas import translate
 from fileio import read_sheet, write_sheet
+from dialogs import Dialogs, SizeDialog
 import re
 
 
@@ -17,11 +19,22 @@ class App(tk.Tk):
     DROPDOWN_WIDTH = 24
 
     def __init__(self, state_path=None):
+        if sys.platform=='win32':
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('QuickSheet.Desktop')
         super().__init__(className='QuickSheet')
+        self.withdraw()
+        self._restored_geometry=None
+        self._restored_maximized=False
+        self.dialogs=Dialogs(self)
         icon_path=Path(__file__).resolve().parent/'assets'/'Quick-Sheet.png'
         if icon_path.exists():
             self.app_icon=tk.PhotoImage(file=str(icon_path))
             self.iconphoto(True,self.app_icon)
+        if sys.platform=='win32':
+            ico_path=str(Path(__file__).resolve().parent/'assets'/'Quick-Sheet.ico')
+            self.iconbitmap(default=ico_path)
+            self.iconbitmap(ico_path)
         self.geometry('1100x720')
         self.minsize(650, 400)
         self.sheet = Sheet()
@@ -31,6 +44,8 @@ class App(tk.Tk):
         self.anchor = (0, 0)
         self.top = self.left = 0
         self.editor = None
+        self.resize_state = None
+        self._header_axis=None
         self.undo_stack = []
         self.redo_stack = []
         self.state_path = Path(state_path) if state_path else Path(__file__).resolve().parent / '.mini-session.json'
@@ -40,25 +55,40 @@ class App(tk.Tk):
         self.table_var = tk.BooleanVar()
         formatting = ttk.Frame(self, padding=(10, 2, 10, 8))
         formatting.pack(fill='x')
-        ttk.Label(formatting, text='Cell format').pack(side='left')
+        ttk.Label(formatting, text='Cell Format').pack(side='left')
         self.fmt = ttk.Combobox(formatting, values=['General', 'Text', 'Decimal', 'Currency', 'Percentage', 'Date', 'Date/time'], state='readonly', width=12)
         self.fmt.set('General')
         self.fmt.pack(side='left', padx=6)
         self.fmt.bind('<<ComboboxSelected>>', lambda e: self.format_cells())
         ttk.Label(formatting, text='Decimals').pack(side='left')
-        self.dec = tk.IntVar(value=2)
-        ttk.Spinbox(formatting, from_=0, to=10, textvariable=self.dec, width=3, command=self.format_cells).pack(side='left', padx=6)
+        self._updating_decimals=False
+        self._decimal_dirty=False
+        self._decimal_after=None
+        self.dec = tk.IntVar(value=0)
+        self.dec.trace_add('write',self.schedule_decimals)
+        self.decimal_control=ttk.Spinbox(formatting,from_=0,to=10,textvariable=self.dec,width=3,command=self.format_decimals)
+        self.decimal_control.pack(side='left',padx=6)
+        self.decimal_control.bind('<Return>',self.format_decimals)
+        self.decimal_control.bind('<FocusOut>',self.format_decimals)
         ttk.Button(formatting, text='Σ Sum below selection', command=self.sum_below).pack(side='left', padx=10)
         ttk.Button(formatting,text='Style…',command=self.style_dialog).pack(side='left')
         ttk.Button(formatting,text='Size…',command=self.size_dialog).pack(side='left',padx=4)
-        ttk.Button(formatting, text='Clear filters', command=self.clear_filters).pack(side='right')
+        ttk.Button(formatting, text='Clear Sheet', command=self.clear_sheet).pack(side='right')
         formula = ttk.Frame(self, padding=(10, 0, 10, 8))
         formula.pack(fill='x')
         self.cell_label = ttk.Label(formula, width=8)
         self.cell_label.pack(side='left')
+        functions=ttk.Menubutton(formula,text='Functions')
+        self.function_menu=tk.Menu(functions,tearoff=False)
+        for label in ('Auto Sum','Sum','Average','Min','Max','Count','CountA','ABS','Today','Now'):
+            self.function_menu.add_command(label=label,command=lambda n=label.upper().replace(' ',''):self.insert_function(n))
+        functions.configure(menu=self.function_menu)
+        functions.pack(side='left',padx=(0,8))
         self.formula = ttk.Entry(formula)
         self.formula.pack(side='left', fill='x', expand=True)
         self.formula.bind('<Return>', self.formula_commit)
+        self.formula.bind('<Button-3>',self.formula_context_menu)
+        self.formula.bind('<Shift-F10>',self.formula_context_menu)
         frame = ttk.Frame(self)
         frame.pack(fill='both', expand=True)
         self.canvas = tk.Canvas(frame, background='white', highlightthickness=0, takefocus=True)
@@ -74,6 +104,8 @@ class App(tk.Tk):
         self.canvas.bind('<Configure>', lambda e: self.draw())
         self.canvas.bind('<Button-1>', self.click)
         self.canvas.bind('<B1-Motion>', self.drag)
+        self.canvas.bind('<ButtonRelease-1>',self.finish_resize)
+        self.canvas.bind('<Motion>',self.resize_cursor)
         self.canvas.bind('<Double-1>', self.double_click)
         self.canvas.bind('<Key>', self.key)
         self.canvas.bind('<MouseWheel>', lambda e: self.scroll_y('scroll', -int(e.delta/120), 'units'))
@@ -96,9 +128,15 @@ class App(tk.Tk):
         self.protocol('WM_DELETE_WINDOW', self.close)
         self.apply_fonts()
         self.select(0,0)
+        # Settle menu geometry before restoring the saved client size on Windows.
+        self.update_idletasks()
         self.restore_session()
         self.update_recent_menu()
         self.after(30000,self.recalculate_clock)
+        self.deiconify()
+        self.update_idletasks()
+        if self._restored_geometry and not self._restored_maximized:
+            self.geometry(self._restored_geometry)
 
     def recalculate_clock(self):
         self.draw()
@@ -154,30 +192,56 @@ class App(tk.Tk):
 
     def context_menu(self, e):
         self.finish_edit()
-        if getattr(e, 'num', None) == 3:
-            pos = self.hit(e)
-            if pos:
-                a,b,d,f = self.bounds()
-                if not (a <= pos[0] <= d and b <= pos[1] <= f): self.select(*pos)
-            x,y = e.x_root,e.y_root
-        else:
-            x,y = self.canvas.winfo_rootx()+self.GUTTER, self.canvas.winfo_rooty()+self.H
+        header=None
+        if getattr(e,'num',None)==3:
+            if e.y<self.H and e.x>=self.GUTTER:
+                header=1; self.select_header(1,self.column_at(e.x))
+            elif e.x<self.GUTTER and e.y>=self.H:
+                row=self.row_at(e.y)
+                if row is not None: header=0; self.select_header(0,row)
+            else:
+                pos=self.hit(e)
+                if pos:
+                    a,b,d,f=self.bounds()
+                    if not (a<=pos[0]<=d and b<=pos[1]<=f): self.select(*pos)
+            x,y=e.x_root,e.y_root
+        else: x,y=self.canvas.winfo_rootx()+self.GUTTER,self.canvas.winfo_rooty()+self.H
         self.canvas.focus_set()
-        menu = tk.Menu(self, tearoff=False)
-        for label, command, shortcut in [('Cut',self.cut,'Ctrl+X'), ('Copy',self.copy,'Ctrl+C'), ('Paste',self.paste,'Ctrl+V')]:
-            menu.add_command(label=label, command=command, accelerator=shortcut)
+        menu=tk.Menu(self,tearoff=False)
+        if header is not None:
+            labels=('Insert rows above','Insert rows below','Delete rows') if header==0 else ('Insert columns left','Insert columns right','Delete columns')
+            menu.add_command(label=labels[0],command=lambda:self.structure(header))
+            menu.add_command(label=labels[1],command=lambda:self.structure(header,after=True))
+            menu.add_command(label=labels[2],command=lambda:self.structure(header,delete=True))
+        else:
+            for label,command,shortcut in [('Cut',self.cut,'Ctrl+X'),('Copy',self.copy,'Ctrl+C'),('Paste',self.paste,'Ctrl+V')]:
+                menu.add_command(label=label,command=command,accelerator=shortcut)
         try: menu.tk_popup(x,y)
         finally: menu.grab_release()
         return 'break'
+
+    def select_header(self,axis,index,extend=False,preserve=True):
+        a,b,d,f=self.bounds()
+        preserve=preserve and self._header_axis in (None,axis)
+        if axis==0:
+            start,end=(min(self.anchor[0],index),max(self.anchor[0],index)) if extend else ((a,d) if preserve and a<=index<=d else (index,index))
+            self.select(start,0); self.select(end,max(25,self.sheet.extent()[1]-1),True)
+        else:
+            start,end=(min(self.anchor[1],index),max(self.anchor[1],index)) if extend else ((b,f) if preserve and b<=index<=f else (index,index))
+            self.select(0,start); self.select(max(199,self.sheet.extent()[0]-1),end,True)
+        self._header_axis=axis
 
     def checkpoint(self):
         self.undo_stack.append(json.dumps(self.sheet.dump()))
         self.undo_stack = self.undo_stack[-100:]
         self.redo_stack.clear()
 
+    def refresh_title(self):
+        self.title(('• ' if self.dirty else '')+(self.path or 'Untitled')+' — Quick-Sheet')
+
     def changed(self):
-        self.dirty = True
-        self.title(('• ' if self.dirty else '') + (self.path or 'Untitled') + ' — Quick-Sheet')
+        self.dirty=True
+        self.refresh_title()
         self.draw()
 
     def undo(self):
@@ -186,6 +250,7 @@ class App(tk.Tk):
             self.sheet = Sheet.from_data(json.loads(self.undo_stack.pop()))
             self.table_var.set(self.sheet.table)
             self.apply_fonts()
+            self.update_format_controls()
             self.changed()
 
     def redo(self):
@@ -194,6 +259,7 @@ class App(tk.Tk):
             self.sheet = Sheet.from_data(json.loads(self.redo_stack.pop()))
             self.table_var.set(self.sheet.table)
             self.apply_fonts()
+            self.update_format_controls()
             self.changed()
 
     def bounds(self):
@@ -290,13 +356,63 @@ class App(tk.Tk):
         self.hscroll.set(self.left/100,min(1,c/100))
 
     def select(self,r,c,extend=False):
+        if self._decimal_dirty: self.format_decimals()
+        self._header_axis=None
         self.active=(max(0,r),max(0,c))
         if not extend: self.anchor=self.active
         self.cell_label.config(text=address(*self.active))
         self.formula.delete(0,'end')
         self.formula.insert(0,self.sheet.raw(*self.active))
-        self.fmt.set(self.sheet.styles.get(address(*self.active),{}).get('format','General'))
+        self.update_format_controls()
         self.draw()
+
+    def update_format_controls(self):
+        style=self.sheet.style(*self.active)
+        self.fmt.set(style.get('format','General'))
+        self._updating_decimals=True
+        try: self.dec.set(style.get('decimals',0))
+        finally: self._updating_decimals=False
+        self._decimal_dirty=False
+
+    def row_at(self,y):
+        edge=self.H
+        for row in self.visible_rows:
+            edge+=self.row_height(row)
+            if self.H<=y<edge: return row
+        return None
+
+    def resize_handle(self,e):
+        if e.y<self.H and e.x>=self.GUTTER:
+            edge=self.GUTTER
+            for col in range(self.left,self.left+1000):
+                edge+=self.column_width(col)
+                if abs(e.x-edge)<=4: return 1,col
+                if edge>e.x+4: break
+        elif e.x<self.GUTTER and e.y>=self.H:
+            edge=self.H
+            for row in self.visible_rows:
+                edge+=self.row_height(row)
+                if abs(e.y-edge)<=4: return 0,row
+                if edge>e.y+4: break
+        return None
+
+    def resize_cursor(self,e):
+        handle=self.resize_handle(e)
+        self.canvas.configure(cursor=('sb_h_double_arrow' if handle[0]==1 else 'sb_v_double_arrow') if handle else '')
+
+    def finish_resize(self,e=None):
+        if self.resize_state is None: return
+        axis,index,start,original,before,dirty,initial_sheet=self.resize_state
+        dimensions=self.sheet.col_widths if axis==1 else self.sheet.row_heights
+        if dimensions==before:
+            self.dirty=dirty; self.refresh_title()
+        else:
+            self.undo_stack.append(initial_sheet)
+            self.undo_stack=self.undo_stack[-100:]
+            self.redo_stack.clear()
+        self.resize_state=None
+        self.canvas.configure(cursor='')
+        return 'break'
 
     def hit(self,e):
         if e.x<self.GUTTER or e.y<self.H: return None
@@ -313,10 +429,21 @@ class App(tk.Tk):
     def click(self,e):
         self.finish_edit()
         self.canvas.focus_set()
+        handle=self.resize_handle(e)
+        if handle:
+            axis,index=handle
+            original=self.column_width(index) if axis==1 else self.row_height(index)
+            before=(self.sheet.col_widths if axis==1 else self.sheet.row_heights).copy()
+            self.resize_state=(axis,index,e.x if axis==1 else e.y,original,before,self.dirty,json.dumps(self.sheet.dump()))
+            return 'break'
         if e.y < self.H and e.x >= self.GUTTER:
             col = self.column_at(e.x)
-            self.select(0,col)
-            self.select(max(199,self.sheet.extent()[0]-1),col,extend=True)
+            self.select_header(1,col,extend=bool(e.state&1),preserve=False)
+            return
+        if e.x<self.GUTTER and e.y>=self.H:
+            row=self.row_at(e.y)
+            if row is not None:
+                self.select_header(0,row,extend=bool(e.state&1),preserve=False)
             return
         pos=self.hit(e)
         if pos:
@@ -325,6 +452,22 @@ class App(tk.Tk):
                 self.filter_menu(pos[1],e)
 
     def drag(self,e):
+        if self.resize_state is not None:
+            axis,index,start,original,before,dirty,initial_sheet=self.resize_state
+            size=max(35 if axis==1 else 20,min(1000 if axis==1 else 500,original+(e.x if axis==1 else e.y)-start))
+            dimensions=self.sheet.col_widths if axis==1 else self.sheet.row_heights
+            if size==original:
+                dimensions.clear(); dimensions.update(before)
+            else: dimensions[str(index)]=size
+            self.changed()
+            return 'break'
+        if self._header_axis==0 and e.x<self.GUTTER:
+            row=self.row_at(e.y)
+            if row is not None: self.select_header(0,row,extend=True)
+            return
+        if self._header_axis==1 and e.y<self.H:
+            self.select_header(1,self.column_at(e.x),extend=True)
+            return
         pos=self.hit(e)
         if pos: self.select(*pos,extend=True)
 
@@ -410,12 +553,96 @@ class App(tk.Tk):
 
     def format_cells(self):
         self.finish_edit()
-        try: decimals=max(0,min(10,int(self.dec.get())))
-        except (ValueError,tk.TclError): return
+        if self._decimal_dirty: self.format_decimals()
         self.checkpoint()
         a,b,d,f=self.bounds()
         for r in range(a,d+1):
-            for c in range(b,f+1): self.sheet.styles.setdefault(address(r,c),{}).update(format=self.fmt.get(),decimals=decimals)
+            for c in range(b,f+1): self.sheet.styles.setdefault(address(r,c),{}).update(format=self.fmt.get())
+        self.changed()
+
+    def schedule_decimals(self,*args):
+        if self._updating_decimals: return
+        self._decimal_dirty=True
+        if self._decimal_after is not None: self.after_cancel(self._decimal_after)
+        self._decimal_after=self.after(300,self.format_decimals)
+
+    def format_decimals(self,event=None):
+        if self._decimal_after is not None:
+            self.after_cancel(self._decimal_after); self._decimal_after=None
+        if not self._decimal_dirty: return
+        # Clear the flag before finishing an editor, which may update selection.
+        self._decimal_dirty=False
+        self.finish_edit()
+        try: decimals=int(self.dec.get())
+        except (ValueError,tk.TclError): return
+        if not 0<=decimals<=10: return
+        a,b,d,f=self.bounds()
+        cols=range(b,f+1)
+        if all(self.sheet.column_decimals.get(str(c))==decimals for c in cols): return
+        self.checkpoint()
+        for c in cols: self.sheet.column_decimals[str(c)]=decimals
+        self.changed()
+        return 'break' if event and event.type==tk.EventType.KeyPress else None
+
+    def insert_function(self,name):
+        self.finish_edit()
+        name=name.upper()
+        if name=='AUTOSUM': return self.activate_autosum()
+        if name in ('SUM','AVERAGE','MIN','MAX','COUNT','COUNTA'):
+            row,col=self.active
+            boundary=1 if self.sheet.table else 0
+            end=row-1
+            start=end
+            while start>=boundary and self.sheet.raw(start,col)!='': start-=1
+            start+=1
+            if end<boundary or start>end:
+                self.status.config(text=f'No contiguous cells above {address(row,col)} to use for {name}.')
+                return False
+            value=f'={name}({address(start,col)}:{address(end,col)})'
+            self.formula.delete(0,'end'); self.formula.insert(0,value)
+            self.formula_commit()
+            return True
+        self.formula.delete(0,'end')
+        self.formula.insert(0,f'={name}()')
+        self.formula.icursor(len(name)+2)
+        self.formula.focus_set()
+        return True
+
+    def activate_autosum(self):
+        if self._decimal_dirty: self.format_decimals()
+        self.finish_edit()
+        self.checkpoint()
+        row=self.sheet.start_autosum()
+        style=self.sheet.styles.get(address(row,1),{})
+        if style.get('format') in ('Text','Date','Date/time'): style['format']='General'
+        self.sheet.filters.clear()
+        self.top=self.left=0
+        self.select(row,0)
+        self.changed()
+        self.canvas.focus_set()
+        return True
+
+    def formula_context_menu(self,event):
+        self.formula.focus_set()
+        menu=tk.Menu(self,tearoff=False)
+        for label,action in [('Cut','<<Cut>>'),('Copy','<<Copy>>'),('Paste','<<Paste>>')]:
+            menu.add_command(label=label,command=lambda a=action:self.formula.event_generate(a))
+        menu.add_command(label='Enter',command=self.formula_commit)
+        x=getattr(event,'x_root',self.formula.winfo_rootx()+10)
+        y=getattr(event,'y_root',self.formula.winfo_rooty()+10)
+        try: menu.tk_popup(x,y)
+        finally: menu.grab_release()
+        return 'break'
+
+    def clear_sheet(self):
+        if self._decimal_dirty: self.format_decimals()
+        self.finish_edit()
+        self.checkpoint()
+        self.sheet=Sheet()
+        self.top=self.left=0
+        self.table_var.set(False)
+        self.apply_fonts()
+        self.select(0,0)
         self.changed()
 
     def apply_style(self, **changes):
@@ -428,7 +655,7 @@ class App(tk.Tk):
     def style_dialog(self):
         self.finish_edit()
         st=self.sheet.styles.get(address(*self.active),{})
-        win=tk.Toplevel(self); win.title('Cell style'); win.transient(self)
+        win=self.dialogs.window('Cell style')
         bold=tk.BooleanVar(value=st.get('bold',False)); italic=tk.BooleanVar(value=st.get('italic',False))
         ttk.Checkbutton(win,text='Bold',variable=bold).grid(row=0,column=0,padx=12,pady=10)
         ttk.Checkbutton(win,text='Italic',variable=italic).grid(row=0,column=1,padx=12)
@@ -436,7 +663,7 @@ class App(tk.Tk):
         align.set(st.get('alignment','left')); align.grid(row=1,column=0,padx=12,pady=10)
         colors={k:st.get(k,v) for k,v in [('foreground','#192c3b'),('background','#ffffff')]}
         def choose(k):
-            picked=colorchooser.askcolor(colors[k],parent=win)[1]
+            picked=self.dialogs.askcolor(colors[k])[1]
             if picked: colors[k]=picked
         ttk.Button(win,text='Text color…',command=lambda:choose('foreground')).grid(row=2,column=0,padx=12,pady=10)
         ttk.Button(win,text='Fill color…',command=lambda:choose('background')).grid(row=2,column=1,padx=12,pady=10)
@@ -446,24 +673,16 @@ class App(tk.Tk):
 
     def size_dialog(self):
         self.finish_edit()
-        a,b,d,f=self.bounds()
-        width=simpledialog.askinteger('Column width','Width in pixels (Cancel to keep):',parent=self,
-                                      initialvalue=self.column_width(b),minvalue=35,maxvalue=1000)
-        height=simpledialog.askinteger('Row height','Height in pixels (Cancel to keep):',parent=self,
-                                       initialvalue=self.row_height(a),minvalue=20,maxvalue=500)
-        if width is None and height is None: return
-        self.checkpoint()
-        if width is not None:
-            for c in range(b,f+1): self.sheet.col_widths[str(c)]=width
-        if height is not None:
-            for r in range(a,d+1): self.sheet.row_heights[str(r)]=height
-        self.changed()
+        if hasattr(self,'size_window') and self.size_window.winfo_exists():
+            self.size_window.lift(); return self.size_window
+        self.size_window=SizeDialog(self)
+        return self.size_window
 
     def sum_below(self):
         self.finish_edit()
         a,b,d,f=self.bounds()
         if any(self.sheet.raw(d+1,c) for c in range(b,f+1)):
-            messagebox.showinfo('Sum','The row below your selection contains data. Choose a range with an empty row below it.')
+            self.dialogs.showinfo('Sum','The row below your selection contains data. Choose a range with an empty row below it.')
             return
         self.checkpoint()
         for c in range(b,f+1): self.sheet.set(d+1,c,f'=SUM({address(a,c)}:{address(d,c)})')
@@ -591,10 +810,11 @@ class App(tk.Tk):
         self.changed()
         return 'break'
 
-    def structure(self, axis, delete=False):
+    def structure(self, axis, delete=False, after=False):
         self.finish_edit()
         a,b,d,f=self.bounds()
         index,count=(a,d-a+1) if axis==0 else (b,f-b+1)
+        if after and not delete: index+=count
         self.checkpoint()
         self.sheet.structural_edit(axis,index,count,delete)
         self.changed()
@@ -622,9 +842,7 @@ class App(tk.Tk):
     def search_dialog(self,replace=False):
         self.finish_edit()
         if hasattr(self,'search_window') and self.search_window.winfo_exists(): self.search_window.destroy()
-        win=self.search_window=tk.Toplevel(self)
-        win.title('Find and Replace' if replace else 'Find')
-        win.transient(self)
+        win=self.search_window=self.dialogs.window('Find and Replace' if replace else 'Find')
         query=tk.StringVar(value=self.search_text)
         replacement=tk.StringVar()
         ttk.Label(win,text='Find').grid(row=0,column=0,padx=10,pady=10)
@@ -712,21 +930,20 @@ class App(tk.Tk):
             self.search_text=state.get('search','')
             self.recent_files=state.get('recent',[])[:10]
             self.update_recent_menu()
-            if state.get('geometry'): self.geometry(state['geometry'])
+            self._restored_geometry=state.get('geometry')
+            self._restored_maximized=bool(state.get('maximized'))
+            if self._restored_geometry: self.geometry(self._restored_geometry)
             if state.get('maximized'):
                 try: self.state('zoomed')
                 except tk.TclError: self.attributes('-zoomed',True)
             self.title(('• ' if self.dirty else '')+(self.path or 'Untitled')+' — Quick-Sheet')
             self.draw()
         except Exception as error:
-            self.after_idle(lambda text=str(error):messagebox.showerror('Could not restore previous session',text))
+            self.after_idle(lambda text=str(error):self.dialogs.showerror('Could not restore previous session',text))
 
     def fonts(self):
         self.finish_edit()
-        win=tk.Toplevel(self)
-        win.withdraw()
-        win.title('Fonts')
-        win.transient(self)
+        win=self.dialogs.window('Fonts')
         families=sorted(font.families())
         variables=[]
         controls=[]
@@ -748,6 +965,7 @@ class App(tk.Tk):
             self.sheet.ui_font,self.sheet.cell_font=[v[0].get() for v in variables]
             self.sheet.ui_size,self.sheet.cell_size=sizes
             self.apply_fonts()
+            self.update_format_controls()
             self.changed()
             win.destroy()
         apply_button=ttk.Button(win,text='Apply',command=apply)
@@ -760,17 +978,13 @@ class App(tk.Tk):
             dropdown.grid_configure(padx=3)
             size_control.grid_configure(padx=6)
         apply_button.grid_configure(column=0,columnspan=3,sticky='e')
-        self.update_idletasks()
-        width,height=original_size
-        x=self.winfo_rootx()+(self.winfo_width()-width)//2
-        y=self.winfo_rooty()+(self.winfo_height()-height)//2
-        win.geometry(f'{width}x{height}+{x}+{y}')
-        win.deiconify()
+        win.preferred_size=original_size
+        win.show()
 
     def may_discard(self):
         self.finish_edit()
         if not self.dirty: return True
-        answer=messagebox.askyesnocancel('Unsaved sheet','Save your changes first?')
+        answer=self.dialogs.askyesnocancel('Unsaved sheet','Save your changes first?')
         return False if answer is None else self.save() if answer else True
 
     def new(self):
@@ -798,7 +1012,7 @@ class App(tk.Tk):
         self.update_recent_menu()
 
     def open(self):
-        path=filedialog.askopenfilename(filetypes=[('Sheets','*.mini *.csv *.tsv *.xlsx'),('All files','*.*')])
+        path=self.dialogs.askopenfilename(filetypes=[('Sheets','*.mini *.csv *.tsv *.xlsx'),('All files','*.*')])
         if path: self.open_path(path)
 
     def open_path(self,path):
@@ -810,25 +1024,25 @@ class App(tk.Tk):
             if not native: self.changed()
             self.remember_file(path)
             if Path(path).suffix.lower()=='.xlsx':
-                messagebox.showinfo('Excel import','Imported the active worksheet. Quick-Sheet preserves supported cell data and styles. Save as a new file; other sheets, charts, and unsupported Excel features are not imported.')
-        except Exception as error: messagebox.showerror('Could not open sheet',str(error))
+                self.dialogs.showinfo('Excel import','Imported the active worksheet. Quick-Sheet preserves supported cell data and styles. Save as a new file; other sheets, charts, and unsupported Excel features are not imported.')
+        except Exception as error: self.dialogs.showerror('Could not open sheet',str(error))
 
     def import_csv(self):
         self.import_delimited('.csv')
 
     def import_delimited(self,ext):
-        path=filedialog.askopenfilename(filetypes=[(ext[1:].upper(),'*'+ext),('All files','*.*')])
+        path=self.dialogs.askopenfilename(filetypes=[(ext[1:].upper(),'*'+ext),('All files','*.*')])
         if path: self.open_path(path)
 
     def save(self,save_as=False):
         self.finish_edit()
         path=self.path if not save_as else None
         if not path:
-            path=filedialog.asksaveasfilename(defaultextension='.mini',filetypes=[('Quick-Sheet','*.mini'),('Excel','*.xlsx'),('CSV (values only)','*.csv'),('TSV (values only)','*.tsv')])
+            path=self.dialogs.asksaveasfilename(defaultextension='.mini',filetypes=[('Quick-Sheet','*.mini'),('Excel','*.xlsx'),('CSV (values only)','*.csv'),('TSV (values only)','*.tsv')])
         if not path: return False
         ext=Path(path).suffix.lower()
-        if ext in ('.csv','.tsv') and (self.sheet.styles or any(v.startswith('=') for v in self.sheet.cells.values())):
-            if not messagebox.askyesno('Values only','CSV/TSV saves displayed values only. Formulas and formatting will not be retained in this file. Continue?'): return False
+        if ext in ('.csv','.tsv') and (self.sheet.styles or self.sheet.column_decimals or any(v.startswith('=') for v in self.sheet.cells.values())):
+            if not self.dialogs.askyesno('Values only','CSV/TSV saves displayed values only. Formulas and formatting will not be retained in this file. Continue?'): return False
         try:
             write_sheet(self.sheet,path)
             self.path,self.dirty=str(path),False
@@ -836,22 +1050,22 @@ class App(tk.Tk):
             self.title(str(path)+' — Quick-Sheet')
             return True
         except Exception as error:
-            messagebox.showerror('Could not save sheet',str(error)); return False
+            self.dialogs.showerror('Could not save sheet',str(error)); return False
 
     def export(self):
         self.finish_edit()
-        path=filedialog.asksaveasfilename(defaultextension='.csv',filetypes=[('CSV (values only)','*.csv')])
+        path=self.dialogs.asksaveasfilename(defaultextension='.csv',filetypes=[('CSV (values only)','*.csv')])
         if path:
             try:
                 with open(path,'w',encoding='utf-8-sig',newline='') as stream: stream.write(self.sheet.csv_text())
-            except Exception as error: messagebox.showerror('Could not export CSV',str(error))
+            except Exception as error: self.dialogs.showerror('Could not export CSV',str(error))
 
     def close(self):
         if self.focus_get()==self.formula: self.formula_commit()
         self.finish_edit()
         try: self.persist_session()
         except Exception as error:
-            messagebox.showerror('Could not remember session',f'Your window will stay open so your work is retained.\n\n{error}')
+            self.dialogs.showerror('Could not remember session',f'Your window will stay open so your work is retained.\n\n{error}')
             return
         self.destroy()
 
