@@ -30,6 +30,8 @@ class Sheet:
         self.styles = {}
         self.table = False
         self.filters = {}
+        self.row_heights = {}
+        self.col_widths = {}
         self.ui_font = 'CaskaydiaCove NFM'
         self.ui_size = 10
         self.cell_font = 'Arial'
@@ -62,6 +64,43 @@ class Sheet:
         from formulas import evaluate
         return evaluate(raw, lambda r,c: self.value(r,c,seen))
 
+    def structural_edit(self, axis, index, count=1, delete=False):
+        """Move sparse cells and update references, including absolute references."""
+        from formulas import map_refs
+        if axis not in (0,1) or index<0 or count<1: raise ValueError('Invalid insertion')
+        def shift(point):
+            result=list(point)
+            v=result[axis]
+            if delete and index<=v<index+count: return None
+            if v>=index: result[axis] += -count if delete else count
+            return result
+        def ref_move(ref):
+            point=shift(coordinates(ref.replace('$','')))
+            if point is None: return '#REF!'
+            letters,digits=re.fullmatch(r'([A-Z]+)([0-9]+)',address(*point)).groups()
+            col,row=re.fullmatch(r'([$]?[A-Za-z]+)([$]?[0-9]+)',ref).groups()
+            return ('$' if col.startswith('$') else '')+letters+('$' if row.startswith('$') else '')+digits
+        for attr in ('cells','styles'):
+            result={}
+            for key,value in getattr(self,attr).items():
+                point=shift(coordinates(key))
+                if point is not None:
+                    result[address(*point)] = map_refs(value,ref_move) if attr=='cells' else value.copy()
+            setattr(self,attr,result)
+        dimensions=self.row_heights if axis==0 else self.col_widths
+        updated={}
+        for key,value in dimensions.items():
+            point=[0,0]; point[axis]=int(key)
+            moved=shift(point)
+            if moved is not None: updated[str(moved[axis])]=value
+        dimensions.clear(); dimensions.update(updated)
+        if axis==1:
+            filters={}
+            for key,value in self.filters.items():
+                point=shift((0,int(key)))
+                if point is not None: filters[str(point[1])]=value
+            self.filters=filters
+
     def display(self, row, col):
         try:
             value = self.value(row, col)
@@ -82,7 +121,7 @@ class Sheet:
                 max((c for r,c in points), default=0)+1)
 
     def dump(self):
-        return {key: getattr(self, key) for key in ('cells', 'styles', 'table', 'filters', 'ui_font', 'ui_size', 'cell_font', 'cell_size')}
+        return {key: getattr(self, key) for key in ('cells', 'styles', 'table', 'filters', 'ui_font', 'ui_size', 'cell_font', 'cell_size', 'row_heights', 'col_widths')}
 
     def sort_rows(self, col, descending=False, numeric=False):
         """Sort whole data rows, preserving the header and cell formatting.

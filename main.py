@@ -6,6 +6,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, font
 from sheet import Sheet, address, coordinates
+from formulas import translate
 import re
 
 
@@ -79,6 +80,8 @@ class App(tk.Tk):
         self.canvas.bind('<Control-c>', self.copy)
         self.canvas.bind('<Control-x>', self.cut)
         self.canvas.bind('<Control-v>', self.paste)
+        self.canvas.bind('<Control-d>', lambda e: self.fill(False))
+        self.canvas.bind('<Control-r>', lambda e: self.fill(True))
         self.canvas.bind('<Button-3>', self.context_menu)
         self.canvas.bind('<Shift-F10>', self.context_menu)
         self.bind('<Control-f>', lambda e: self.search_dialog())
@@ -101,7 +104,10 @@ class App(tk.Tk):
             ('Edit', [('Undo', self.undo, 'Ctrl+Z'), ('Redo', self.redo, 'Ctrl+Y'), None,
                       ('Cut', lambda: self.clipboard_action('cut'), 'Ctrl+X'),
                       ('Copy', lambda: self.clipboard_action('copy'), 'Ctrl+C'),
-                      ('Paste', lambda: self.clipboard_action('paste'), 'Ctrl+V')]),
+                      ('Paste', lambda: self.clipboard_action('paste'), 'Ctrl+V'), None,
+                      ('Fill down', self.fill, 'Ctrl+D'), ('Fill right', lambda: self.fill(True), 'Ctrl+R'),
+                      ('Insert rows', lambda: self.structure(0), ''), ('Delete rows', lambda: self.structure(0,True), ''),
+                      ('Insert columns', lambda: self.structure(1), ''), ('Delete columns', lambda: self.structure(1,True), '')]),
             ('Search', [('Find…', self.search_dialog, 'Ctrl+F'), ('Find next', self.find_next, 'F3'),
                         ('Find and Replace…', lambda: self.search_dialog(True), 'Ctrl+H')]),
             ('Data', [('Import CSV…', self.import_csv, ''), ('Export CSV…', self.export, ''), None,
@@ -424,11 +430,12 @@ class App(tk.Tk):
         writer.writerows(values)
         self.clipboard_clear()
         self.clipboard_append(out.getvalue())
-        self.internal_clipboard=(out.getvalue(),values,styles)
+        self.internal_clipboard=(out.getvalue(),values,styles,(a,b),False)
         return 'break'
 
     def cut(self,e=None):
         self.copy()
+        self.internal_clipboard=(*self.internal_clipboard[:4],True)
         self.checkpoint()
         a,b,d,f=self.bounds()
         for r in range(a,d+1):
@@ -446,8 +453,10 @@ class App(tk.Tk):
         values=list(csv.reader(io.StringIO(text,newline=''),delimiter='\t'))
         if not values: return 'break'
         styles=None
+        source=None
+        cut=False
         if self.internal_clipboard and self.internal_clipboard[0]==text:
-            _,values,styles=self.internal_clipboard
+            _,values,styles,source,cut=self.internal_clipboard
         self.checkpoint()
         r,c,end_r,end_c=self.bounds()
         height,width=len(values),max(len(row) for row in values)
@@ -459,7 +468,10 @@ class App(tk.Tk):
         for i in range(out_h):
             row=values[i%height]
             for j in range(out_w):
-                self.sheet.set(r+i,c+j,row[j%width] if j%width<len(row) else '')
+                value=row[j%width] if j%width<len(row) else ''
+                if source is not None and not cut:
+                    value=translate(value,r+i-source[0]-i%height,c+j-source[1]-j%width)
+                self.sheet.set(r+i,c+j,value)
                 if styles is not None:
                     key=address(r+i,c+j)
                     self.sheet.styles.pop(key,None)
@@ -468,6 +480,31 @@ class App(tk.Tk):
         self.select(r,c)
         self.select(r+out_h-1,c+out_w-1,extend=True)
         return 'break'
+
+    def fill(self, right=False):
+        self.finish_edit()
+        a,b,d,f=self.bounds()
+        if (right and b==f) or (not right and a==d): return 'break'
+        self.checkpoint()
+        for r in range(a,d+1):
+            for c in range(b,f+1):
+                sr,sc=(r,b) if right else (a,c)
+                if (r,c)==(sr,sc): continue
+                self.sheet.set(r,c,translate(self.sheet.raw(sr,sc),r-sr,c-sc))
+                style=self.sheet.styles.get(address(sr,sc),{}).copy()
+                self.sheet.styles.pop(address(r,c),None)
+                if style: self.sheet.styles[address(r,c)]=style
+        self.changed()
+        return 'break'
+
+    def structure(self, axis, delete=False):
+        self.finish_edit()
+        a,b,d,f=self.bounds()
+        index,count=(a,d-a+1) if axis==0 else (b,f-b+1)
+        self.checkpoint()
+        self.sheet.structural_edit(axis,index,count,delete)
+        self.changed()
+        self.select(a,b)
 
     def apply_fonts(self):
         self.menu_font=font.Font(family=self.sheet.ui_font,size=self.sheet.ui_size,weight='normal',slant='roman')

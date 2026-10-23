@@ -24,3 +24,18 @@ class FormulaTests(unittest.TestCase):
         for expr in ['=__import__("os")','=A1','=AVERAGE(C1:C2)','=2^1000000','=SUM.__class__']:
             s.set(0,0,expr)
             self.assertEqual(s.display(0,0),'#ERROR')
+
+class StructureTests(unittest.TestCase):
+    def test_insert_delete_and_absolute_references(self):
+        s=Sheet(); s.set(0,0,'5'); s.set(1,1,'=$A$1+A1'); s.styles['A1']={'bold':True}
+        s.structural_edit(0,0)
+        self.assertEqual(s.raw(2,1),'=$A$2+A2')
+        self.assertEqual(s.value(2,1),10)
+        self.assertTrue(s.styles['A2']['bold'])
+        s.structural_edit(0,1,delete=True)
+        self.assertEqual(s.display(1,1),'#ERROR')
+    def test_column_dimensions_and_filters_move(self):
+        s=Sheet(); s.filters={'1':'x'}; s.col_widths={'1':180}
+        s.structural_edit(1,0)
+        self.assertEqual(s.filters,{'2':'x'})
+        self.assertEqual(s.col_widths,{'2':180})
