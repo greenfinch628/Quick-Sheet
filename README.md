@@ -58,7 +58,19 @@ Ctrl+O opens `.mini`, CSV, TSV, or XLSX. Ctrl+S saves; Ctrl+Shift+S opens Save A
 
 ## Shared code and updates
 
-The same Git repository serves nauvoo (Windows) and scopuli (Fedora): https://github.com/greenfinch628/Quick-Sheet. Keep `.mini-session.json` and `.venv` machine-local; they are ignored by Git. Back up existing local changes before updating.
+The same Git repository serves nauvoo (Windows) and scopuli (Fedora). Both installations have two remotes:
+
+- `origin`: https://github.com/greenfinch628/Quick-Sheet.git
+- `gitea`: ssh://git@scopuli:2224/scopuli/Quick-Sheet.git
+
+Git commits are shared between both hosts. Push each remote explicitly; a normal `git push` updates only the upstream (`origin`). Direct Gitea access requires that machine's SSH public key to be registered in Gitea.
+
+```sh
+git push origin master
+git push gitea master
+```
+
+ Keep `.mini-session.json` and `.venv` machine-local; they are ignored by Git. Back up existing local changes before updating.
 
 ```sh
 git status --short
