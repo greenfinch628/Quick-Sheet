@@ -59,37 +59,8 @@ class Sheet:
                 return float(raw.replace(',', '')) if raw else ''
             except ValueError:
                 return raw
-        expr = raw[1:].upper()
-
-        def number(ref):
-            value = self.value(*coordinates(ref), seen)
-            return value if isinstance(value, (int, float)) else 0
-
-        def total(match):
-            r1, c1 = coordinates(match[1])
-            r2, c2 = coordinates(match[2])
-            if (abs(r2-r1)+1)*(abs(c2-c1)+1) > 100000:
-                raise ValueError('Range too large')
-            return str(sum(number(address(r, c)) for r in range(min(r1,r2), max(r1,r2)+1)
-                           for c in range(min(c1,c2), max(c1,c2)+1)))
-
-        expr = re.sub(r'SUM\(\s*([A-Z]+[1-9][0-9]*)\s*:\s*([A-Z]+[1-9][0-9]*)\s*\)', total, expr)
-        expr = re.sub(r'\b[A-Z]+[1-9][0-9]*\b', lambda m: str(number(m[0])), expr)
-        tree = ast.parse(expr, mode='eval')
-
-        def evaluate(node):
-            if isinstance(node, ast.Constant) and type(node.value) in (int, float):
-                return node.value
-            if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
-                return evaluate(node.operand) * (-1 if isinstance(node.op, ast.USub) else 1)
-            if isinstance(node, ast.BinOp):
-                a, b = evaluate(node.left), evaluate(node.right)
-                if isinstance(node.op, ast.Add): return a + b
-                if isinstance(node.op, ast.Sub): return a - b
-                if isinstance(node.op, ast.Mult): return a * b
-                if isinstance(node.op, ast.Div): return a / b
-            raise ValueError('Unsupported formula')
-        return evaluate(tree.body)
+        from formulas import evaluate
+        return evaluate(raw, lambda r,c: self.value(r,c,seen))
 
     def display(self, row, col):
         try:
@@ -102,7 +73,7 @@ class Sheet:
                 if fmt == 'Decimal': return f'{value:,.{decimals}f}'
                 return f'{value:g}'
             return str(value)
-        except (ValueError, SyntaxError, ZeroDivisionError, OverflowError, RecursionError):
+        except (ValueError, SyntaxError, ZeroDivisionError, OverflowError, RecursionError, TypeError, ArithmeticError):
             return '#ERROR'
 
     def extent(self):
@@ -124,7 +95,7 @@ class Sheet:
         values = {}
         for r in range(1, rows):
             try: values[r] = self.value(r, col)
-            except (ValueError, SyntaxError, ZeroDivisionError, OverflowError, RecursionError):
+            except (ValueError, SyntaxError, ZeroDivisionError, OverflowError, RecursionError, TypeError, ArithmeticError):
                 values[r] = self.display(r, col)
         filled = [r for r in values if values[r] != '']
         blanks = [r for r in values if values[r] == '']
