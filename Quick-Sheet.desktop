@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Quick-Sheet
+Comment=A quick single-sheet spreadsheet
+Exec=/home/rczys/Applications/Quick-Sheet/launch.sh
+Path=/home/rczys/Applications/Quick-Sheet
+Icon=/home/rczys/Applications/Quick-Sheet/assets/Quick-Sheet.png
+Terminal=false
+Categories=Office;Spreadsheet;
+StartupNotify=true
+StartupWMClass=QuickSheet
