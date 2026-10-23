@@ -107,6 +107,7 @@ class Sheet:
     def display(self, row, col):
         try:
             value = self.value(row, col)
+            if isinstance(value,bool): return 'TRUE' if value else 'FALSE'
             if isinstance(value, (int, float)):
                 style = self.styles.get(address(row, col), {})
                 fmt = style.get('format', 'General')

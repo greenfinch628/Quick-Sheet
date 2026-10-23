@@ -1,3 +1,5 @@
 __pycache__/
 .mini-session.json
 .mini-session.tmp
+
+.venv/

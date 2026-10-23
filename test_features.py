@@ -40,8 +40,10 @@ class StructureTests(unittest.TestCase):
         self.assertEqual(s.filters,{'2':'x'})
         self.assertEqual(s.col_widths,{'2':180})
 
-from test_app import AppTests
-class EditingFormattingTests(AppTests):
+import test_app
+class EditingFormattingTests(unittest.TestCase):
+    setUp=test_app.AppTests.setUp
+    tearDown=test_app.AppTests.tearDown
     def test_fill_copy_structure_style_and_sizing(self):
         a=self.app
         a.sheet.set(0,0,'2'); a.sheet.set(0,1,'=A1+$A$1')
@@ -66,3 +68,32 @@ class EditingFormattingTests(AppTests):
         s.col_widths={'0':200}; s.row_heights={'0':50}
         restored=Sheet.from_data(s.dump())
         self.assertEqual(restored.col_widths,{'0':200})
+
+class FileTests(unittest.TestCase):
+    def test_delimited_and_xlsx_roundtrip(self):
+        import tempfile
+        from pathlib import Path
+        from fileio import write_sheet,read_sheet
+        with tempfile.TemporaryDirectory() as folder:
+            s=Sheet(); s.set(0,0,'00123'); s.styles['A1']={'format':'Text','bold':True,'background':'#abcdef'}
+            s.set(0,1,'3'); s.set(1,1,'=SUM(B1,2)'); s.styles['B1']={'format':'Currency','decimals':2}
+            s.set(2,0,'two\tfields\nand lines'); s.col_widths={'0':200}; s.row_heights={'0':50}; s.table=True
+            for ext in ('.mini','.xlsx'):
+                target=Path(folder)/('data'+ext); write_sheet(s,target); restored=read_sheet(target)
+                self.assertEqual(restored.raw(0,0),'00123'); self.assertEqual(restored.value(1,1),5)
+                self.assertTrue(restored.styles['A1']['bold']); self.assertEqual(restored.styles['A1']['background'],'#abcdef')
+                self.assertEqual(restored.col_widths['0'],200); self.assertEqual(restored.row_heights['0'],50)
+            for ext in ('.csv','.tsv'):
+                target=Path(folder)/('data'+ext); write_sheet(s,target); restored=read_sheet(target)
+                self.assertEqual(restored.raw(2,0),'two\tfields\nand lines')
+                self.assertEqual(restored.raw(0,1),'$3.00'); self.assertEqual(restored.raw(1,1),'5')
+    def test_failed_save_preserves_original(self):
+        import tempfile
+        from pathlib import Path
+        from fileio import write_sheet
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'old.mini'; path.write_text('original')
+            with patch('fileio.json.dumps',side_effect=ValueError('failure')):
+                with self.assertRaises(ValueError): write_sheet(Sheet(),path)
+            self.assertEqual(path.read_text(),'original')

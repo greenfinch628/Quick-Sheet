@@ -1,0 +1,8 @@
+* text=auto
+*.py text eol=lf
+*.sh text eol=lf
+*.desktop text eol=lf
+*.vbs text eol=crlf
+*.png binary
+*.ico binary
+*.lnk binary
