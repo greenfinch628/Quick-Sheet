@@ -39,3 +39,30 @@ class StructureTests(unittest.TestCase):
         s.structural_edit(1,0)
         self.assertEqual(s.filters,{'2':'x'})
         self.assertEqual(s.col_widths,{'2':180})
+
+from test_app import AppTests
+class EditingFormattingTests(AppTests):
+    def test_fill_copy_structure_style_and_sizing(self):
+        a=self.app
+        a.sheet.set(0,0,'2'); a.sheet.set(0,1,'=A1+$A$1')
+        a.select(0,1); a.select(2,1,True); a.fill()
+        self.assertEqual(a.sheet.raw(2,1),'=A3+$A$1')
+        a.undo(); self.assertEqual(a.sheet.raw(2,1),'')
+        a.select(0,1); a.copy(); a.select(0,2); a.paste()
+        self.assertEqual(a.sheet.raw(0,2),'=B1+$A$1')
+        a.apply_style(bold=True,italic=True,alignment='right',foreground='#123456')
+        a.fmt.set('Percentage'); a.format_cells()
+        self.assertTrue(a.sheet.styles['C1']['bold'])
+        a.sheet.col_widths={'0':200}; a.sheet.row_heights={'0':50}; a.draw()
+        from types import SimpleNamespace
+        self.assertEqual(a.hit(SimpleNamespace(x=a.GUTTER+201,y=a.H+51)),(1,1))
+        a.select(0,0); a.structure(0)
+        self.assertEqual(a.sheet.raw(1,2),'=B2+$A$2')
+    def test_percentage_dates_and_style_roundtrip(self):
+        s=Sheet(); s.set(0,0,'0.125'); s.styles['A1']={'format':'Percentage','decimals':1}
+        self.assertEqual(s.display(0,0),'12.5%')
+        s.set(0,1,'2026-10-23'); s.styles['B1']={'format':'Date'}
+        self.assertEqual(s.display(0,1),'2026-10-23')
+        s.col_widths={'0':200}; s.row_heights={'0':50}
+        restored=Sheet.from_data(s.dump())
+        self.assertEqual(restored.col_widths,{'0':200})

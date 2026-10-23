@@ -1,5 +1,4 @@
 """Small, dependency-free spreadsheet data model."""
-import ast
 import csv
 import io
 import re
@@ -54,6 +53,10 @@ class Sheet:
             raise ValueError('Circular reference')
         seen.add(key)
         raw = self.raw(row, col)
+        if self.styles.get(key,{}).get('format') in ('Date','Date/time') and not raw.startswith('='):
+            from datetime import datetime
+            try: return (datetime.fromisoformat(raw)-datetime(1899,12,30)).total_seconds()/86400
+            except ValueError: pass
         if self.styles.get(key, {}).get('format') == 'Text':
             return raw
         if not raw.startswith('='):
@@ -108,9 +111,15 @@ class Sheet:
                 style = self.styles.get(address(row, col), {})
                 fmt = style.get('format', 'General')
                 decimals = style.get('decimals', 2)
+                if fmt == 'Percentage': return f'{value*100:.{decimals}f}%'
+                if fmt in ('Date','Date/time'):
+                    from datetime import datetime, timedelta
+                    stamp=datetime(1899,12,30)+timedelta(days=value)
+                    return stamp.strftime('%Y-%m-%d %H:%M:%S' if fmt=='Date/time' else '%Y-%m-%d')
                 if fmt == 'Currency': return f'${value:,.{decimals}f}'
                 if fmt == 'Decimal': return f'{value:,.{decimals}f}'
                 return f'{value:g}'
+            if isinstance(value,bool): return 'TRUE' if value else 'FALSE'
             return str(value)
         except (ValueError, SyntaxError, ZeroDivisionError, OverflowError, RecursionError, TypeError, ArithmeticError):
             return '#ERROR'
