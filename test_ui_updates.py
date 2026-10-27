@@ -68,7 +68,7 @@ class UIUpdateTests(unittest.TestCase):
         a.formula.insert(0,'=ABS(-3)'); a.formula.selection_range(1,4)
         menus=[]
         def capture(menu,*args): menus.append(menu)
-        with patch('main.tk.Menu.tk_popup',new=capture):
+        with patch('main.ContextMenu.show',new=capture):
             a.formula.event_generate('<Button-3>',x=5,y=5)
         self.assertEqual(len(menus),1)
         menu=menus[0]
@@ -140,7 +140,7 @@ class UIUpdateTests(unittest.TestCase):
     def header_menu(self,x,y):
         menus=[]
         def capture(menu,*args): menus.append(menu)
-        with patch('main.tk.Menu.tk_popup',new=capture):
+        with patch('main.ContextMenu.show',new=capture):
             self.app.context_menu(SimpleNamespace(num=3,x=x,y=y,x_root=10,y_root=10))
         self.assertEqual(len(menus),1)
         return menus[0]

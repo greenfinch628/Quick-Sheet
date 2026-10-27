@@ -101,7 +101,7 @@ class AppTests(unittest.TestCase):
         self.assertEqual(a.sheet.raw(2,0),'semi;colon')
         self.assertEqual(list(csv.reader(io.StringIO(a.sheet.csv_text())))[1],['A, B','12'])
         titles=[a.menubar.entrycget(i,'label') for i in range(a.menubar.index('end')+1) if a.menubar.type(i)=='cascade']
-        self.assertEqual(titles,['File','Edit','Search','Data','Tools'])
+        self.assertEqual(titles,['File','Edit','Search','Format','Data','Tools'])
 
     def test_shortcuts_context_menu_and_search_dialog(self):
         a=self.app
@@ -115,7 +115,7 @@ class AppTests(unittest.TestCase):
         self.assertEqual(a.sheet.raw(1,0),'shortcut')
         a.select(0,0)
         a.select(1,0,True)
-        with patch('main.tk.Menu.tk_popup') as popup:
+        with patch('main.ContextMenu.show') as popup:
             a.context_menu(SimpleNamespace(num=3,x=a.GUTTER+10,y=2*a.H+5,x_root=10,y_root=10))
             popup.assert_called_once()
         self.assertEqual(a.bounds(),(0,0,1,0))
@@ -158,7 +158,7 @@ class AppTests(unittest.TestCase):
         y=int(sum(coords[1::2])/3)
         menus=[]
         def capture(menu,*args): menus.append(menu)
-        with patch('main.tk.Menu.tk_popup',new=capture):
+        with patch('main.ContextMenu.show',new=capture):
             a.canvas.event_generate('<Button-1>',x=x,y=y)
         self.assertEqual(len(menus),1)
         menu=menus[0]

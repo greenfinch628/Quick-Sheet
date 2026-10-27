@@ -10,6 +10,7 @@ from sheet import Sheet, address, coordinates
 from formulas import translate
 from fileio import read_sheet, write_sheet
 from dialogs import Dialogs, SizeDialog
+from context_menu import ContextMenu
 import re
 
 
@@ -70,9 +71,7 @@ class App(tk.Tk):
         self.decimal_control.pack(side='left',padx=6)
         self.decimal_control.bind('<Return>',self.format_decimals)
         self.decimal_control.bind('<FocusOut>',self.format_decimals)
-        ttk.Button(formatting, text='Σ Sum below selection', command=self.sum_below).pack(side='left', padx=10)
-        ttk.Button(formatting,text='Style…',command=self.style_dialog).pack(side='left')
-        ttk.Button(formatting,text='Size…',command=self.size_dialog).pack(side='left',padx=4)
+        ttk.Button(formatting, text='Sum', command=lambda:self.sum_above(*self.active)).pack(side='left', padx=10)
         ttk.Button(formatting, text='Clear Sheet', command=self.clear_sheet).pack(side='right')
         formula = ttk.Frame(self, padding=(10, 0, 10, 8))
         formula.pack(fill='x')
@@ -124,6 +123,16 @@ class App(tk.Tk):
         self.bind('<Control-h>', lambda e: self.search_dialog(True))
         self.bind('<F3>', lambda e: self.find_next())
         self.bind('<Control-Shift-S>', lambda e: self.save(True))
+        self._context_menu = None
+        self._context_event = None
+        self.bind('<ButtonPress>', self.dismiss_context_click, add='+')
+        self.bind('<Unmap>', self.context_unmapped, add='+')
+        self.bind('<FocusOut>', self.context_focus_out, add='+')
+        self.bind('<Configure>', self.context_configured, add='+')
+        self._context_key_tag = 'ContextMenuKeys' + str(id(self))
+        self.bind_class(self._context_key_tag, '<KeyPress>', self.context_key)
+        for widget in (self.canvas, self.formula):
+            widget.bindtags((self._context_key_tag,) + widget.bindtags())
         self.build_menus()
         self.protocol('WM_DELETE_WINDOW', self.close)
         self.apply_fonts()
@@ -158,6 +167,7 @@ class App(tk.Tk):
                       ('Insert columns', lambda: self.structure(1), ''), ('Delete columns', lambda: self.structure(1,True), '')]),
             ('Search', [('Find…', self.search_dialog, 'Ctrl+F'), ('Find next', self.find_next, 'F3'),
                         ('Find and Replace…', lambda: self.search_dialog(True), 'Ctrl+H')]),
+            ('Format', [('Style…', self.style_dialog, ''), ('Size…', self.size_dialog, '')]),
             ('Data', [('Import CSV…', self.import_csv, ''), ('Export CSV…', self.export, ''), ('Import TSV…', lambda:self.import_delimited('.tsv'), ''), None,
                       ('Sort A–Z', lambda: self.sort_column(self.active[1]), ''),
                       ('Sort Z–A', lambda: self.sort_column(self.active[1], True), ''),
@@ -190,9 +200,57 @@ class App(tk.Tk):
         else:
             getattr(self, action)()
 
+    def hide_context_menu(self):
+        if self._context_menu is not None:
+            self._context_menu.hide()
+
+    def new_context_menu(self):
+        if self._context_menu is not None:
+            self._context_menu.destroy()
+        self._context_menu = ContextMenu(self)
+        return self._context_menu
+
+    def show_context_menu(self, menu, x, y, event):
+        # Widget bindings run before the window binding for the opening click.
+        self._context_event = (getattr(event, 'serial', None), getattr(event, 'time', None))
+        menu.show(x, y)
+
+    def dismiss_context_click(self, event):
+        if (event.serial, event.time) == self._context_event:
+            return
+        widget = event.widget
+        while widget is not None:
+            if widget is self._context_menu:
+                return
+            widget = getattr(widget, 'master', None)
+        self.hide_context_menu()
+
+    def context_focus_out(self, event):
+        # GNOME may minimize without unmapping Tk's XWayland window.
+        # Defer until focus has settled so moves within the main window are safe.
+        self.after_idle(self.dismiss_context_if_unfocused)
+
+    def dismiss_context_if_unfocused(self):
+        focused = self.focus_get()
+        if focused is None or focused.winfo_toplevel() is not self:
+            self.hide_context_menu()
+
+    def context_unmapped(self, event):
+        if event.widget is self:
+            self.hide_context_menu()
+
+    def context_configured(self, event):
+        if event.widget is self:
+            self.hide_context_menu()
+
+    def context_key(self, event):
+        if self._context_menu is not None:
+            return self._context_menu.handle_key(event)
+
     def context_menu(self, e):
         self.finish_edit()
         header=None
+        target=self.active
         if getattr(e,'num',None)==3:
             if e.y<self.H and e.x>=self.GUTTER:
                 header=1; self.select_header(1,self.column_at(e.x))
@@ -202,12 +260,13 @@ class App(tk.Tk):
             else:
                 pos=self.hit(e)
                 if pos:
+                    target=pos
                     a,b,d,f=self.bounds()
                     if not (a<=pos[0]<=d and b<=pos[1]<=f): self.select(*pos)
             x,y=e.x_root,e.y_root
         else: x,y=self.canvas.winfo_rootx()+self.GUTTER,self.canvas.winfo_rooty()+self.H
         self.canvas.focus_set()
-        menu=tk.Menu(self,tearoff=False)
+        menu=self.new_context_menu()
         if header is not None:
             labels=('Insert rows above','Insert rows below','Delete rows') if header==0 else ('Insert columns left','Insert columns right','Delete columns')
             menu.add_command(label=labels[0],command=lambda:self.structure(header))
@@ -216,8 +275,13 @@ class App(tk.Tk):
         else:
             for label,command,shortcut in [('Cut',self.cut,'Ctrl+X'),('Copy',self.copy,'Ctrl+C'),('Paste',self.paste,'Ctrl+V')]:
                 menu.add_command(label=label,command=command,accelerator=shortcut)
-        try: menu.tk_popup(x,y)
-        finally: menu.grab_release()
+            menu.add_separator()
+            menu.add_command(label='Sum',command=lambda:self.sum_above(*target))
+        if self._header_axis==0 and self.bounds()[0]==self.bounds()[2]==0:
+            menu.add_separator()
+            menu.add_command(label='Unfreeze First Row' if self.sheet.table else 'Freeze First Row',
+                             command=self.toggle_first_row)
+        self.show_context_menu(menu,x,y,e)
         return 'break'
 
     def select_header(self,axis,index,extend=False,preserve=True):
@@ -427,6 +491,7 @@ class App(tk.Tk):
         return e.x>=x+w-self.DROPDOWN_WIDTH
 
     def click(self,e):
+        self.hide_context_menu()
         self.finish_edit()
         self.canvas.focus_set()
         handle=self.resize_handle(e)
@@ -542,12 +607,14 @@ class App(tk.Tk):
         self.canvas.focus_set()
 
     def scroll_y(self,kind,value,unit=None):
+        self.hide_context_menu()
         self.finish_edit()
         count=max(200,self.sheet.extent()[0]+50)
         self.top=max(0,min(count-1,int(float(value)*count) if kind=='moveto' else self.top+int(value)*(15 if unit=='pages' else 3)))
         self.draw()
 
     def scroll_x(self,kind,value,unit=None):
+        self.hide_context_menu()
         self.finish_edit()
         self.left=max(0,min(99,int(float(value)*100) if kind=='moveto' else self.left+int(value)))
         self.draw()
@@ -625,14 +692,13 @@ class App(tk.Tk):
 
     def formula_context_menu(self,event):
         self.formula.focus_set()
-        menu=tk.Menu(self,tearoff=False)
+        menu=self.new_context_menu()
         for label,action in [('Cut','<<Cut>>'),('Copy','<<Copy>>'),('Paste','<<Paste>>')]:
             menu.add_command(label=label,command=lambda a=action:self.formula.event_generate(a))
         menu.add_command(label='Enter',command=self.formula_commit)
         x=getattr(event,'x_root',self.formula.winfo_rootx()+10)
         y=getattr(event,'y_root',self.formula.winfo_rooty()+10)
-        try: menu.tk_popup(x,y)
-        finally: menu.grab_release()
+        self.show_context_menu(menu,x,y,event)
         return 'break'
 
     def clear_sheet(self):
@@ -679,16 +745,19 @@ class App(tk.Tk):
         self.size_window=SizeDialog(self)
         return self.size_window
 
-    def sum_below(self):
+    def sum_above(self,row,col):
         self.finish_edit()
-        a,b,d,f=self.bounds()
-        if any(self.sheet.raw(d+1,c) for c in range(b,f+1)):
-            self.dialogs.showinfo('Sum','The row below your selection contains data. Choose a range with an empty row below it.')
-            return
         self.checkpoint()
-        for c in range(b,f+1): self.sheet.set(d+1,c,f'=SUM({address(a,c)}:{address(d,c)})')
+        start=1 if self.sheet.table else 0
+        value=f'=SUM({address(start,col)}:{address(row-1,col)})' if row>start else '=0'
+        self.sheet.set(row,col,value)
+        self.select(row,col)
         self.changed()
-        self.select(d+1,b)
+        self.canvas.focus_set()
+
+    def toggle_first_row(self):
+        self.table_var.set(not self.sheet.table)
+        self.table_toggle()
 
     def table_toggle(self):
         self.finish_edit()
@@ -706,7 +775,7 @@ class App(tk.Tk):
         self.changed()
 
     def filter_menu(self,col,e):
-        menu=tk.Menu(self,tearoff=False)
+        menu=self.new_context_menu()
         menu.add_command(label='Sort A–Z',command=lambda:self.sort_column(col))
         menu.add_command(label='Sort Z–A',command=lambda:self.sort_column(col,True))
         menu.add_command(label='Sort numbers ascending',command=lambda:self.sort_column(col,numeric=True))
@@ -723,8 +792,7 @@ class App(tk.Tk):
         values=sorted({self.sheet.display(r,col) for r in range(1,self.sheet.extent()[0])})
         for value in values:
             menu.add_command(label=value or '(blank)',command=lambda v=value:choose(v))
-        try: menu.tk_popup(e.x_root,e.y_root)
-        finally: menu.grab_release()
+        self.show_context_menu(menu,e.x_root,e.y_root,e)
 
     def sort_column(self,col,descending=False,numeric=False):
         self.finish_edit()
