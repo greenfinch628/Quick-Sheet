@@ -11,6 +11,7 @@ from formulas import translate
 from fileio import read_sheet, write_sheet
 from dialogs import Dialogs, SizeDialog
 from context_menu import ContextMenu
+from selection_drag import SelectionDrag
 import re
 
 
@@ -100,10 +101,12 @@ class App(tk.Tk):
         frame.columnconfigure(0, weight=1)
         self.status = ttk.Label(self, padding=8)
         self.status.pack(fill='x')
+        self.selection_drag=SelectionDrag(self)
         self.canvas.bind('<Configure>', lambda e: self.draw())
         self.canvas.bind('<Button-1>', self.click)
         self.canvas.bind('<B1-Motion>', self.drag)
-        self.canvas.bind('<ButtonRelease-1>',self.finish_resize)
+        self.canvas.bind('<ButtonRelease-1>',self.release_pointer)
+        self.canvas.bind('<Escape>',self.selection_drag.cancel)
         self.canvas.bind('<Motion>',self.resize_cursor)
         self.canvas.bind('<Double-1>', self.double_click)
         self.canvas.bind('<Key>', self.key)
@@ -234,20 +237,27 @@ class App(tk.Tk):
         focused = self.focus_get()
         if focused is None or focused.winfo_toplevel() is not self:
             self.hide_context_menu()
+            self.selection_drag.cancel()
 
     def context_unmapped(self, event):
         if event.widget is self:
             self.hide_context_menu()
+            self.selection_drag.cancel()
 
     def context_configured(self, event):
         if event.widget is self:
             self.hide_context_menu()
+            self.selection_drag.cancel()
 
     def context_key(self, event):
+        if self.selection_drag.state is not None:
+            self.selection_drag.cancel()
+            if event.keysym=='Escape': return 'break'
         if self._context_menu is not None:
             return self._context_menu.handle_key(event)
 
     def context_menu(self, e):
+        self.selection_drag.cancel()
         self.finish_edit()
         header=None
         target=self.active
@@ -309,6 +319,7 @@ class App(tk.Tk):
         self.draw()
 
     def undo(self):
+        self.selection_drag.cancel()
         if self.undo_stack:
             self.redo_stack.append(json.dumps(self.sheet.dump()))
             self.sheet = Sheet.from_data(json.loads(self.undo_stack.pop()))
@@ -318,6 +329,7 @@ class App(tk.Tk):
             self.changed()
 
     def redo(self):
+        self.selection_drag.cancel()
         if self.redo_stack:
             self.undo_stack.append(json.dumps(self.sheet.dump()))
             self.sheet = Sheet.from_data(json.loads(self.redo_stack.pop()))
@@ -418,6 +430,7 @@ class App(tk.Tk):
         count=max(200,self.sheet.extent()[0]+50)
         self.vscroll.set(self.top/count,min(1,(self.top+len(self.visible_rows))/count))
         self.hscroll.set(self.left/100,min(1,c/100))
+        self.selection_drag.draw()
 
     def select(self,r,c,extend=False):
         if self._decimal_dirty: self.format_decimals()
@@ -462,7 +475,12 @@ class App(tk.Tk):
 
     def resize_cursor(self,e):
         handle=self.resize_handle(e)
-        self.canvas.configure(cursor=('sb_h_double_arrow' if handle[0]==1 else 'sb_v_double_arrow') if handle else '')
+        self.canvas.configure(cursor=('sb_h_double_arrow' if handle[0]==1 else 'sb_v_double_arrow') if handle else
+                              'fleur' if self.selection_drag.border_hit(e) else '')
+
+    def release_pointer(self,e):
+        if self.selection_drag.release(e): return 'break'
+        return self.finish_resize(e)
 
     def finish_resize(self,e=None):
         if self.resize_state is None: return
@@ -501,6 +519,7 @@ class App(tk.Tk):
             before=(self.sheet.col_widths if axis==1 else self.sheet.row_heights).copy()
             self.resize_state=(axis,index,e.x if axis==1 else e.y,original,before,self.dirty,json.dumps(self.sheet.dump()))
             return 'break'
+        if self.selection_drag.press(e): return 'break'
         if e.y < self.H and e.x >= self.GUTTER:
             col = self.column_at(e.x)
             self.select_header(1,col,extend=bool(e.state&1),preserve=False)
@@ -517,6 +536,7 @@ class App(tk.Tk):
                 self.filter_menu(pos[1],e)
 
     def drag(self,e):
+        if self.selection_drag.motion(e): return 'break'
         if self.resize_state is not None:
             axis,index,start,original,before,dirty,initial_sheet=self.resize_state
             size=max(35 if axis==1 else 20,min(1000 if axis==1 else 500,original+(e.x if axis==1 else e.y)-start))
@@ -537,6 +557,7 @@ class App(tk.Tk):
         if pos: self.select(*pos,extend=True)
 
     def double_click(self,e):
+        self.selection_drag.cancel()
         pos=self.hit(e)
         if pos and self.sheet.table and pos[0]==0 and self.over_dropdown(pos,e):
             self.click(e)
@@ -1130,6 +1151,7 @@ class App(tk.Tk):
             except Exception as error: self.dialogs.showerror('Could not export CSV',str(error))
 
     def close(self):
+        self.selection_drag.cancel()
         if self.focus_get()==self.formula: self.formula_commit()
         self.finish_edit()
         try: self.persist_session()

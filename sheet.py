@@ -165,6 +165,67 @@ class Sheet:
                 if point is not None: precision[str(point[1])]=value
             self.column_decimals=precision
 
+    def block_move_conflicts(self, bounds, target):
+        """Ignore the source overlap when checking what a block would replace."""
+        a,b,d,f=bounds
+        r,c=target
+        for mapping in (self.cells,self.styles):
+            for key in mapping:
+                y,x=coordinates(key)
+                if r<=y<=r+d-a and c<=x<=c+f-b and not (a<=y<=d and b<=x<=f):
+                    return True
+        return False
+
+    def move_block(self, bounds, target):
+        """Move a rectangle like cut/paste, safely supporting overlapping areas."""
+        a,b,d,f=bounds
+        r,c=target
+        if min(a,b,r,c)<0 or d<a or f<b: raise ValueError('Invalid move')
+        changed=False
+        for attr in ('cells','styles'):
+            original=getattr(self,attr)
+            result={}
+            moved={}
+            for key,value in original.items():
+                y,x=coordinates(key)
+                if a<=y<=d and b<=x<=f:
+                    moved[address(r+y-a,c+x-b)]=value.copy() if attr=='styles' else value
+                elif not (r<=y<=r+d-a and c<=x<=c+f-b):
+                    result[key]=value
+            result.update(moved)
+            changed=changed or result!=original
+            setattr(self,attr,result)
+        if changed: self.refresh_autosums()
+        return changed
+
+    def move_axis(self, axis, start, count, before):
+        """Reorder whole rows/columns by inserting them before an original index.
+
+        Contents and metadata move together; formula text follows cut/paste rules.
+        The return value is the first moved row/column's final index.
+        """
+        if axis not in (0,1) or min(start,before)<0 or count<1: raise ValueError('Invalid move')
+        end=start+count
+        if start<=before<=end: return start
+        destination=before if before<start else before-count
+        def remap(index):
+            if start<=index<end: return destination+index-start
+            if before<start and before<=index<start: return index+count
+            if before>end and end<=index<before: return index-count
+            return index
+        for attr in ('cells','styles'):
+            result={}
+            for key,value in getattr(self,attr).items():
+                point=list(coordinates(key))
+                point[axis]=remap(point[axis])
+                result[address(*point)]=value.copy() if attr=='styles' else value
+            setattr(self,attr,result)
+        metadata=('row_heights',) if axis==0 else ('col_widths','column_decimals','filters')
+        for attr in metadata:
+            setattr(self,attr,{str(remap(int(key))):value for key,value in getattr(self,attr).items()})
+        self.refresh_autosums()
+        return destination
+
     def style(self,row,col):
         style=self.styles.get(address(row,col),{}).copy()
         if str(col) in self.column_decimals: style['decimals']=self.column_decimals[str(col)]
