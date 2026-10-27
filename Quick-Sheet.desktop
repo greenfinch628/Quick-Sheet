@@ -8,5 +8,5 @@ Path=/home/rczys/Applications/Quick-Sheet
 Icon=/home/rczys/Applications/Quick-Sheet/assets/Quick-Sheet.png
 Terminal=false
 Categories=Office;Spreadsheet;
-StartupNotify=true
+StartupNotify=false
 StartupWMClass=QuickSheet
