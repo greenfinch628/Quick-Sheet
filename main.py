@@ -515,6 +515,7 @@ class App(tk.Tk):
         if initial is None: self.editor.select_range(0,'end')
         self.editor.focus_set()
         self.editor.bind('<Return>',lambda e:self.finish_edit(move=True))
+        self.editor.bind('<KP_Enter>', lambda e: self.finish_edit(move=True))
         self.editor.bind('<Escape>',lambda e:self.finish_edit(cancel=True))
         self.editor.bind('<Tab>',lambda e:self.finish_edit(move=True,horizontal=True))
         self.editor.bind('<FocusOut>',lambda e:self.finish_edit())
