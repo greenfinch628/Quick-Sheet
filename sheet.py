@@ -2,6 +2,7 @@
 import csv
 import io
 import re
+from move_refs import rewrite_for_move
 
 
 def address(row, col):
@@ -177,10 +178,12 @@ class Sheet:
         return False
 
     def move_block(self, bounds, target):
-        """Move a rectangle like cut/paste, safely supporting overlapping areas."""
+        """Move a rectangle; only moved formulas follow cells moved with them."""
         a,b,d,f=bounds
         r,c=target
         if min(a,b,r,c)<0 or d<a or f<b: raise ValueError('Invalid move')
+        if (r,c)==(a,b): return False
+        regions=[(bounds,(r-a,c-b))]
         changed=False
         for attr in ('cells','styles'):
             original=getattr(self,attr)
@@ -189,6 +192,8 @@ class Sheet:
             for key,value in original.items():
                 y,x=coordinates(key)
                 if a<=y<=d and b<=x<=f:
+                    if attr=='cells' and self.styles.get(key,{}).get('format')!='Text':
+                        value=rewrite_for_move(value,regions)
                     moved[address(r+y-a,c+x-b)]=value.copy() if attr=='styles' else value
                 elif not (r<=y<=r+d-a and c<=x<=c+f-b):
                     result[key]=value
@@ -201,13 +206,17 @@ class Sheet:
     def move_axis(self, axis, start, count, before):
         """Reorder whole rows/columns by inserting them before an original index.
 
-        Contents and metadata move together; formula text follows cut/paste rules.
+        References are adjusted only inside formulas in the dragged band.
         The return value is the first moved row/column's final index.
         """
         if axis not in (0,1) or min(start,before)<0 or count<1: raise ValueError('Invalid move')
         end=start+count
         if start<=before<=end: return start
         destination=before if before<start else before-count
+        def band(first,last,offset):
+            bounds=(first,0,last,float('inf')) if axis==0 else (0,first,float('inf'),last)
+            return bounds, (offset,0) if axis==0 else (0,offset)
+        regions=[band(start,end-1,destination-start)]
         def remap(index):
             if start<=index<end: return destination+index-start
             if before<start and before<=index<start: return index+count
@@ -217,6 +226,8 @@ class Sheet:
             result={}
             for key,value in getattr(self,attr).items():
                 point=list(coordinates(key))
+                if attr=='cells' and start<=point[axis]<end and self.styles.get(key,{}).get('format')!='Text':
+                    value=rewrite_for_move(value,regions)
                 point[axis]=remap(point[axis])
                 result[address(*point)]=value.copy() if attr=='styles' else value
             setattr(self,attr,result)

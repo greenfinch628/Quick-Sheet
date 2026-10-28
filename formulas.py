@@ -65,6 +65,7 @@ def evaluate(formula, lookup):
             else: yield v
     def run(n):
         if isinstance(n,ast.Constant) and type(n.value) in (int,float,str,bool): return n.value
+        if isinstance(n,ast.Tuple): return [run(item) for item in n.elts]
         if isinstance(n,ast.Name) and n.id.upper() in ('TRUE','FALSE'): return n.id.upper()=='TRUE'
         if isinstance(n,ast.UnaryOp) and isinstance(n.op,(ast.UAdd,ast.USub)):
             return num(run(n.operand))*(-1 if isinstance(n.op,ast.USub) else 1)

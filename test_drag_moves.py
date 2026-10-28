@@ -13,7 +13,7 @@ class MoveModelTests(unittest.TestCase):
         s.styles={'A1':{'bold':True},'B2':{'format':'Currency'},'C2':{'italic':True}}
         self.assertTrue(s.block_move_conflicts((0,0,1,1),(1,1)))
         self.assertTrue(s.move_block((0,0,1,1),(1,1)))
-        self.assertEqual(s.cells,{'B2':'one','C2':'=A1','B3':'two','C3':'three','Z99':'keep'})
+        self.assertEqual(s.cells,{'B2':'one','C2':'=B2','B3':'two','C3':'three','Z99':'keep'})
         self.assertEqual(s.styles,{'B2':{'bold':True},'C3':{'format':'Currency'}})
         s.cells={'A1':'one','B1':'two'}; s.styles={}
         self.assertFalse(s.block_move_conflicts((0,0,0,1),(0,1)))
@@ -66,7 +66,7 @@ class MoveModelTests(unittest.TestCase):
         s.move_axis(0,0,1,1000)
         self.assertEqual(s.cells,{'A1000':'value'})
 
-    def test_formula_reference_text_follows_existing_cut_paste_semantics(self):
+    def test_moved_formula_retains_references_to_sources_left_in_place(self):
         s=Sheet(); s.cells={'A1':'5','B1':'=$A$1+A1','Z9':'=A1'}
         s.move_axis(1,1,1,4)
         self.assertEqual(s.raw(0,3),'=$A$1+A1')
