@@ -1,7 +1,7 @@
 #!/bin/sh
-# Run after copying the app into ~/Applications/Quick-Sheet.
+# Run after copying the app into ~/Applications/quick-sheet.
 set -eu
-app_dir="$HOME/Applications/Quick-Sheet"
+app_dir="$HOME/Applications/quick-sheet"
 icon_dir="$HOME/Pictures/icons"
 mkdir -p "$icon_dir" "$HOME/.local/share/applications"
 chmod +x "$app_dir/launch.sh"

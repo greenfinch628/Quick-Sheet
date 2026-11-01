@@ -22,7 +22,7 @@ python3 -m venv .venv
 sh launch.sh
 ```
 
-`tools/install_linux.sh` preserves the menu and icon installation convention for `~/Applications/Quick-Sheet`. Windows retains its VBS launcher, shortcut, and ICO files; Fedora retains its shell launcher, desktop entry, and PNG/SVG icons. Pillow is needed only to rebuild icons with `tools/build_icons.py`.
+`tools/install_linux.sh` preserves the menu and icon installation convention for `~/Applications/quick-sheet`. Windows retains its VBS launcher, shortcut, and ICO files; Fedora retains its shell launcher, desktop entry, and PNG/SVG icons. Pillow is needed only to rebuild icons with `tools/build_icons.py`.
 
 Context menus for cells, row/column headings, the formula bar, and filters are drawn inside the main window. Escape dismisses them; clicking another cell dismisses the menu and selects the cell in one click. Shift+F10 opens a context menu from the grid or formula bar. Use Up/Down, Home/End, and Enter to choose commands; long filter lists also support the mouse wheel and scrollbar. Menus hide when the main window loses focus, unmaps, or changes geometry, and when the sheet scrolls. Focus-loss dismissal also handles GNOME minimizing an XWayland window without sending Tk an unmap event.
 
