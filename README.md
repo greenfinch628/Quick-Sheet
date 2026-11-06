@@ -4,7 +4,7 @@ A lightweight, single-sheet Python/Tk spreadsheet for Windows and Fedora. The co
 
 ## Run and install Excel support
 
-Python 3.10+ with Tk is required. The launchers prefer a local `.venv` when present and otherwise use the system Python. Windows: double-click `Launch.vbs` or the existing shortcut. Fedora: run `sh launch.sh` or use the application menu.
+Python 3.10+ with Tk is required. The launchers prefer a local `.venv` when present and otherwise use the system Python. Windows: double-click `Launch.vbs` or the existing shortcut. Fedora: use the RPM installation workflow below, then launch Quick-Sheet from Show Apps. For source development, run `sh launch.sh`.
 
 Windows PowerShell, from the application directory:
 
@@ -22,11 +22,11 @@ python3 -m venv .venv
 sh launch.sh
 ```
 
-`tools/install_linux.sh` preserves the menu and icon installation convention for `~/Applications/quick-sheet`. Windows retains its VBS launcher, shortcut, and ICO files; Fedora retains its shell launcher, desktop entry, and PNG/SVG icons. Pillow is needed only to rebuild icons with `tools/build_icons.py`.
+`install_linux.sh` and `tools/install_linux.sh` now invoke the Fedora RPM migration/update script. Windows retains its VBS launcher, shortcut, and ICO files; Fedora retains its shell launcher, desktop entry, and PNG/SVG icons. Pillow is needed only to rebuild icons with `tools/build_icons.py`.
 
 Context menus for cells, row/column headings, the formula bar, and filters are drawn inside the main window. Escape dismisses them; clicking another cell dismisses the menu and selects the cell in one click. Shift+F10 opens a context menu from the grid or formula bar. Use Up/Down, Home/End, and Enter to choose commands; long filter lists also support the mouse wheel and scrollbar. Menus hide when the main window loses focus, unmaps, or changes geometry, and when the sheet scrolls. Focus-loss dismissal also handles GNOME minimizing an XWayland window without sending Tk an unmap event.
 
-The system-Python branch of `launch.sh` retains its `WAYLAND_DISPLAY` workaround. Custom context menus no longer create separate popup windows, but the main menubar and Functions dropdown still use native Tk menus. Removing the launcher workaround requires a GNOME desktop check of those menus; the automated Xvfb tests do not establish whether it is still needed.
+Both source and installed launchers retain the `WAYLAND_DISPLAY` workaround to use XWayland. Custom context menus no longer create separate popup windows, but the main menubar and Functions dropdown still use native Tk menus. Removing the launcher workaround requires a GNOME desktop check of those menus; the automated Xvfb tests do not establish whether it is still needed.
 
 ## Editing and formulas
 
@@ -65,7 +65,7 @@ Ctrl+O opens `.mini`, CSV, TSV, or XLSX. Ctrl+S saves; Ctrl+Shift+S opens Save A
 - CSV/TSV import handles quoted fields and UTF-8 BOMs. Export writes displayed values, including filtered rows. Saving with formulas/styles asks before using a values-only format.
 - XLSX imports the active worksheet, formulas, supported formats/styles, sizes, and a frozen first row. It opens as an unsaved import so the original workbook is protected. Save As creates a single-sheet workbook. Other tabs, charts, macros, merges, and unsupported Excel features are not retained. Excel may recalculate formulas when opening a saved workbook. Import is limited to one million cells.
 - New/Open/Import ask before discarding unsaved work. Named saves use a temporary file and replacement so failed writes retain the original.
-- Closing preserves unsaved work, styles, selection, filters, view, fonts, recent paths, and undo history in `.mini-session.json`. A snapshot failure leaves the window open. Recovery is on normal close, not after a crash.
+- Closing preserves unsaved work, styles, selection, filters, view, fonts, recent paths, and undo history in `$XDG_DATA_HOME/quick-sheet/session.json` (normally `~/.local/share/quick-sheet/session.json`) on Linux, or `.mini-session.json` beside the source on Windows. Legacy Linux sessions are copied automatically when no new session exists; originals are retained. A snapshot failure leaves the window open. Recovery is on normal close, not after a crash.
 
 ## Shared code and updates
 
@@ -105,3 +105,30 @@ xvfb-run -a .venv/bin/python -m unittest -v
 ```
 
 Tests cover formulas, reference translation, editing, formatting, dimensions, sorting/filter UI, clipboard, search, native/CSV/TSV/XLSX files, failed writes, and session recovery. macOS is untested.
+
+## Releases and Linux packages
+
+`VERSION` is authoritative for Help → About and both package formats. Change it for every release that changes packaged files. Existing valid packages are reused; previous releases are retained and invalid existing files are reported for inspection rather than overwritten.
+
+Build from any directory:
+
+```sh
+~/Applications/quick-sheet/packaging/createQuickSheetPackages.sh
+```
+
+The RPM builder requires `rpm-build`; DEB builds use Podman and an Ubuntu 26.04 builder (reusing the nex-editg builder when available). Pure Python application packages are `noarch` / `all`, with distribution-managed Tk and openpyxl dependencies. Outputs are under `packages/fedora-44/` and `packages/ubuntu-26.04/`. Builds never commit or push automatically.
+
+Install the standalone updater on Scopuli or another Fedora computer:
+
+```sh
+mkdir -p ~/bin/Applications-scripts
+scp scopuli:Applications/quick-sheet/packaging/updateQuickSheetFromScopuli.sh ~/bin/Applications-scripts/
+chmod +x ~/bin/Applications-scripts/updateQuickSheetFromScopuli.sh
+~/bin/Applications-scripts/updateQuickSheetFromScopuli.sh
+```
+
+On Scopuli the updater reads local RPMs; elsewhere it retrieves available RPMs over SSH from `scopuli` (override with `QUICK_SHEET_SOURCE_HOST`). It validates metadata and package digests, selects the newest release using RPM version comparison, and installs only if needed. SSH host authentication remains enabled; local packages are unsigned, as in the other local application workflows. It requires Fedora's `python3-rpm`, RPM, DNF, SSH/SCP, and sudo access. Close Quick-Sheet normally before updating so the latest session is saved.
+
+Migration copies session/settings without replacing existing user data, backs up recognized obsolete launchers under `~/.local/share/quick-sheet/migration-backups/`, updates GNOME favorites, and removes only known launcher files or symlinks. Customized launchers are reported and retained. It never deletes the source repository, original session, icons, spreadsheets, or other user-created files. Backups contain the old favorite-app list and launcher if rollback is needed. Machine-specific source-host overrides belong in the local environment, not Git.
+
+Before publishing, run the tests, inspect both packages, then commit the complete release and packages and push the same commit to GitHub and Gitea.

@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, font, simpledialog, colorchooser
+from app_info import APP_NAME, VERSION, WINDOW_CLASS, default_state_path
 from sheet import Sheet, address, coordinates
 from formulas import translate
 from fileio import read_sheet, write_sheet
@@ -24,7 +25,7 @@ class App(tk.Tk):
         if sys.platform=='win32':
             import ctypes
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('QuickSheet.Desktop')
-        super().__init__(className='QuickSheet')
+        super().__init__(baseName='quick-sheet', className=WINDOW_CLASS)
         self.withdraw()
         self._restored_geometry=None
         self._restored_maximized=False
@@ -50,14 +51,27 @@ class App(tk.Tk):
         self._header_axis=None
         self.undo_stack = []
         self.redo_stack = []
-        self.state_path = Path(state_path) if state_path else Path(__file__).resolve().parent / '.mini-session.json'
+        self.state_path = Path(state_path) if state_path else default_state_path()
         self.internal_clipboard = None
         self.search_text = ''
         self.recent_files = []
         self.table_var = tk.BooleanVar()
         formatting = ttk.Frame(self, padding=(10, 2, 10, 8))
         formatting.pack(fill='x')
-        ttk.Label(formatting, text='Cell Format').pack(side='left')
+        ttk.Label(formatting, text='Align').pack(side='left')
+        self.alignment_buttons={}
+        self.alignment_icons={}
+        for alignment in ('left','center','right'):
+            icon=tk.PhotoImage(master=self,width=20,height=18)
+            for y,length in zip((2,6,10,14),(18,12,18,12)):
+                x={'left':1,'center':(20-length)//2,'right':19-length}[alignment]
+                icon.put('#344054',to=(x,y,x+length,y+2))
+            self.alignment_icons[alignment]=icon
+            button=ttk.Button(formatting,image=icon,width=3,
+                              command=lambda value=alignment:self.align_cells(value))
+            button.pack(side='left',padx=2)
+            self.alignment_buttons[alignment]=button
+        ttk.Label(formatting, text='Format').pack(side='left',padx=(6,0))
         self.fmt = ttk.Combobox(formatting, values=['General', 'Text', 'Decimal', 'Currency', 'Percentage', 'Date', 'Date/time'], state='readonly', width=12)
         self.fmt.set('General')
         self.fmt.pack(side='left', padx=6)
@@ -72,7 +86,7 @@ class App(tk.Tk):
         self.decimal_control.pack(side='left',padx=6)
         self.decimal_control.bind('<Return>',self.format_decimals)
         self.decimal_control.bind('<FocusOut>',self.format_decimals)
-        ttk.Button(formatting, text='Sum', command=lambda:self.sum_above(*self.active)).pack(side='left', padx=10)
+        ttk.Button(formatting, text='Σ', width=3, command=lambda:self.sum_above(*self.active)).pack(side='left', padx=10)
         ttk.Button(formatting, text='Clear Sheet', command=self.clear_sheet).pack(side='right')
         formula = ttk.Frame(self, padding=(10, 0, 10, 8))
         formula.pack(fill='x')
@@ -170,7 +184,7 @@ class App(tk.Tk):
                       ('Insert columns', lambda: self.structure(1), ''), ('Delete columns', lambda: self.structure(1,True), '')]),
             ('Search', [('Find…', self.search_dialog, 'Ctrl+F'), ('Find next', self.find_next, 'F3'),
                         ('Find and Replace…', lambda: self.search_dialog(True), 'Ctrl+H')]),
-            ('Format', [('Style…', self.style_dialog, ''), ('Size…', self.size_dialog, '')]),
+            ('Format', [('Cell Style', self.style_dialog, ''), ('Cell Size', self.size_dialog, '')]),
             ('Data', [('Import CSV…', self.import_csv, ''), ('Export CSV…', self.export, ''), ('Import TSV…', lambda:self.import_delimited('.tsv'), ''), None,
                       ('Sort A–Z', lambda: self.sort_column(self.active[1]), ''),
                       ('Sort Z–A', lambda: self.sort_column(self.active[1], True), ''),
@@ -195,6 +209,16 @@ class App(tk.Tk):
         tools.add_checkbutton(label='Freeze First Row', variable=self.table_var,
                               command=self.table_toggle)
         self.menubar.add_cascade(label='Tools', menu=tools)
+        help_menu = tk.Menu(self.menubar, tearoff=False)
+        help_menu.add_command(label='About Quick-Sheet', command=self.about)
+        self.menubar.add_cascade(label='Help', menu=help_menu)
+
+    def about(self):
+        win = self.dialogs.window('About Quick-Sheet')
+        ttk.Label(win, image=self.app_icon).pack(padx=24, pady=(20, 8))
+        ttk.Label(win, text=APP_NAME, font=('TkDefaultFont', 16, 'bold')).pack(padx=24)
+        ttk.Label(win, text=f'Version {VERSION}').pack(padx=24, pady=8)
+        ttk.Button(win, text='Close', command=win.destroy).pack(pady=(8, 20))
 
     def clipboard_action(self, action):
         widget = self.focus_get()
@@ -442,6 +466,9 @@ class App(tk.Tk):
         self.formula.insert(0,self.sheet.raw(*self.active))
         self.update_format_controls()
         self.draw()
+
+    def align_cells(self, alignment):
+        self.apply_style(alignment=alignment)
 
     def update_format_controls(self):
         style=self.sheet.style(*self.active)
@@ -1035,6 +1062,10 @@ class App(tk.Tk):
         self.finish_edit()
         win=self.dialogs.window('Fonts')
         families=sorted(font.families())
+        # Combobox widths use average character units; measure actual font names.
+        dropdown_font=font.nametofont('TkTextFont',root=self)
+        unit=max(1,dropdown_font.measure('0'))
+        font_width=max(20,(max((dropdown_font.measure(name) for name in families),default=0)+unit-1)//unit+3)
         variables=[]
         controls=[]
         for i,(label,family,size) in enumerate([('Menus',self.sheet.ui_font,self.sheet.ui_size),('Cells',self.sheet.cell_font,self.sheet.cell_size)]):
@@ -1042,7 +1073,7 @@ class App(tk.Tk):
             caption.grid(row=i,column=0,padx=12,pady=12)
             name=tk.StringVar(value=family)
             num=tk.IntVar(value=size)
-            dropdown=ttk.Combobox(win,textvariable=name,values=families)
+            dropdown=ttk.Combobox(win,textvariable=name,values=families,width=font_width)
             dropdown.grid(row=i,column=1,padx=5)
             size_control=ttk.Spinbox(win,from_=8,to=36,textvariable=num,width=4)
             size_control.grid(row=i,column=2,padx=12)
@@ -1064,7 +1095,6 @@ class App(tk.Tk):
         original_size=(win.winfo_reqwidth(),win.winfo_reqheight())
         for caption,dropdown,size_control in controls:
             caption.grid_configure(padx=4)
-            dropdown.configure(width=int(dropdown.cget('width'))+8)
             dropdown.grid_configure(padx=3)
             size_control.grid_configure(padx=6)
         apply_button.grid_configure(column=0,columnspan=3,sticky='e')

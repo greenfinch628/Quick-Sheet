@@ -101,7 +101,7 @@ class AppTests(unittest.TestCase):
         self.assertEqual(a.sheet.raw(2,0),'semi;colon')
         self.assertEqual(list(csv.reader(io.StringIO(a.sheet.csv_text())))[1],['A, B','12'])
         titles=[a.menubar.entrycget(i,'label') for i in range(a.menubar.index('end')+1) if a.menubar.type(i)=='cascade']
-        self.assertEqual(titles,['File','Edit','Search','Format','Data','Tools'])
+        self.assertEqual(titles,['File','Edit','Search','Format','Data','Tools','Help'])
 
     def test_shortcuts_context_menu_and_search_dialog(self):
         a=self.app
