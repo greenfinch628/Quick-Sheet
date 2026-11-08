@@ -108,7 +108,7 @@ Tests cover formulas, reference translation, editing, formatting, dimensions, so
 
 ## Releases and Linux packages
 
-`VERSION` is authoritative for Help → About and both package formats. Change it for every release that changes packaged files. Existing valid packages are reused; previous releases are retained and invalid existing files are reported for inspection rather than overwritten.
+`VERSION` is authoritative for Help → About and both package formats. For a packaging update that keeps the application version, increase `PACKAGE_REVISION` in `packaging/build.py`. Existing valid packages are reused; previous releases are retained and invalid existing files are reported for inspection rather than overwritten.
 
 Build from any directory:
 

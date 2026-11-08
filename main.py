@@ -45,6 +45,7 @@ class App(tk.Tk):
         self.dirty = False
         self.active = (0, 0)
         self.anchor = (0, 0)
+        self._keyboard_end = None
         self.top = self.left = 0
         self.editor = None
         self.resize_state = None
@@ -101,6 +102,7 @@ class App(tk.Tk):
         self.formula = ttk.Entry(formula)
         self.formula.pack(side='left', fill='x', expand=True)
         self.formula.bind('<Return>', self.formula_commit)
+        self.formula.bind('<KP_Enter>', self.formula_commit)
         self.formula.bind('<Button-3>',self.formula_context_menu)
         self.formula.bind('<Shift-F10>',self.formula_context_menu)
         frame = ttk.Frame(self)
@@ -326,7 +328,7 @@ class App(tk.Tk):
             self.select(start,0); self.select(end,max(25,self.sheet.extent()[1]-1),True)
         else:
             start,end=(min(self.anchor[1],index),max(self.anchor[1],index)) if extend else ((b,f) if preserve and b<=index<=f else (index,index))
-            self.select(0,start); self.select(max(199,self.sheet.extent()[0]-1),end,True)
+            self.select(0,start); self.select(self.last_working_row(),end,True)
         self._header_axis=axis
 
     def checkpoint(self):
@@ -363,16 +365,19 @@ class App(tk.Tk):
             self.changed()
 
     def bounds(self):
-        r,c = self.active
+        r,c = self._keyboard_end or self.active
         a,b = self.anchor
         return min(r,a), min(c,b), max(r,a), max(c,b)
 
-    def rows(self):
+    def last_working_row(self):
+        return max(199, self.sheet.extent()[0]-1)
+
+    def rows(self, top=None):
         count = max(200, self.sheet.extent()[0]+50, self.active[0]+30)
         result = []
         for r in range(1 if self.sheet.table else 0, count):
             if all(self.sheet.display(r,int(c)) == v for c,v in self.sheet.filters.items()): result.append(r)
-        return ([0] if self.sheet.table else []) + result[self.top:]
+        return ([0] if self.sheet.table else []) + result[self.top if top is None else top:]
 
     def column_width(self,c):
         return max(35,int(self.sheet.col_widths.get(str(c),self.W)))
@@ -461,6 +466,10 @@ class App(tk.Tk):
         self._header_axis=None
         self.active=(max(0,r),max(0,c))
         if not extend: self.anchor=self.active
+        self._keyboard_end=None
+        self.refresh_selection()
+
+    def refresh_selection(self):
         self.cell_label.config(text=address(*self.active))
         self.formula.delete(0,'end')
         self.formula.insert(0,self.sheet.raw(*self.active))
@@ -591,21 +600,78 @@ class App(tk.Tk):
         else:
             self.edit()
 
-    def key(self,e):
-        if e.state&4: return
+    def reveal_cell(self,r,c,rows=None):
+        if c<self.left: self.left=c
+        width=self.canvas.winfo_width()-self.GUTTER
+        while c>self.left and sum(self.column_width(j) for j in range(self.left,c+1))>width:
+            self.left+=1
+        if r in self.visible_rows: return
+        if rows is None: rows=self.rows(0)
+        if r not in rows: return
+        frozen=int(self.sheet.table)
+        index=rows.index(r)
+        if index<self.top+frozen:
+            self.top=max(0,index-frozen)
+            return
+        # Fit the destination below as many preceding rows as the viewport allows.
+        height=self.canvas.winfo_height()-self.H
+        if frozen: height-=self.row_height(0)
+        used=self.row_height(r)
+        while index>self.top+frozen and used+self.row_height(rows[index-1])<=height:
+            index-=1
+            used+=self.row_height(rows[index])
+        self.top=index-frozen
+
+    def move_selection(self,dr,dc,extend=False,to_edge=False,keep_header=False):
+        axis=self._header_axis
         r,c=self.active
-        if e.keysym in ('Up','Down','Left','Right','Tab'):
-            dr,dc={'Up':(-1,0),'Down':(1,0),'Left':(0,-1),'Right':(0,1),'Tab':(0,1)}[e.keysym]
-            rows=self.rows()
-            if dr and r in rows:
-                idx=rows.index(r)+dr
-                r=rows[idx] if 0<=idx<len(rows) else max(0,r+dr)
-            else: r+=dr
+        if axis==0: c=self.left
+        elif axis==1: r=next(iter(self.visible_rows),0)
+        origin=(r,c)
+        if extend and self._keyboard_end is not None:
+            r,c=self._keyboard_end
+        rows=None
+        if to_edge:
+            if dr: r=self.last_working_row() if dr>0 else 0
+            if dc: c=25 if dc>0 else 0
+        else:
+            if dr:
+                rows=self.rows(0)
+                index=rows.index(r)+dr if r in rows else -1
+                r=rows[index] if 0<=index<len(rows) else max(0,r+dr)
             c=max(0,c+dc)
-            if c<self.left: self.left=c
-            while c>self.left and sum(self.column_width(j) for j in range(self.left,c+1))>self.canvas.winfo_width()-self.GUTTER: self.left+=1
-            if r not in self.visible_rows: self.top=max(0,self.top+dr)
-            self.select(r,c, bool(e.state&1))
+
+        if keep_header and axis==0 and dr:
+            if dr>0: r=min(r,max(self.active[0],self.last_working_row()))
+            self.reveal_cell(r,c,rows)
+            self.select_header(axis,r,preserve=False)
+        elif keep_header and axis==1 and dc:
+            c=min(c,max(25,self.sheet.extent()[1]-1,self.active[1]))
+            self.reveal_cell(r,c,rows)
+            self.select_header(axis,c,preserve=False)
+        elif extend:
+            if self._decimal_dirty: self.format_decimals()
+            if self._keyboard_end is None:
+                if axis is not None:
+                    self.select(*origin)
+                self.anchor=self.active
+            self._keyboard_end=(r,c)
+            if not to_edge: self.reveal_cell(r,c,rows)
+            self.draw()
+        else:
+            self.reveal_cell(r,c,rows)
+            self.select(r,c)
+
+    def key(self,e):
+        arrows={'Up':(-1,0),'Down':(1,0),'Left':(0,-1),'Right':(0,1)}
+        shift=bool(e.state&1)
+        control=bool(e.state&4)
+        if e.keysym in arrows and (not control or shift):
+            self.move_selection(*arrows[e.keysym],extend=shift,to_edge=control,keep_header=not shift)
+            return 'break'
+        if control: return
+        if e.keysym in ('Tab','ISO_Left_Tab'):
+            self.move_selection(0,-1 if shift or e.keysym=='ISO_Left_Tab' else 1)
             return 'break'
         if e.keysym in ('Delete','BackSpace'):
             self.checkpoint()
@@ -614,12 +680,15 @@ class App(tk.Tk):
                 for col in range(b,f+1): self.sheet.set(row,col,'')
             self.changed()
             self.select(*self.active)
-        elif e.keysym in ('Return','F2'): self.edit()
+        elif e.keysym in ('Return','KP_Enter','F2'): self.edit()
         elif e.char and e.char.isprintable(): self.edit(e.char)
 
     def edit(self,initial=None):
         if self.editor: return
         r,c=self.active
+        if self._keyboard_end is not None:
+            self.reveal_cell(r,c)
+            self.draw()
         if r not in self.visible_rows: return
         x,y,w,h=self.cell_rect(r,c)
         self.editor=ttk.Entry(self.canvas,font=self.cell_font)
@@ -627,13 +696,14 @@ class App(tk.Tk):
         self.editor.insert(0,self.sheet.raw(r,c) if initial is None else initial)
         if initial is None: self.editor.select_range(0,'end')
         self.editor.focus_set()
-        self.editor.bind('<Return>',lambda e:self.finish_edit(move=True))
-        self.editor.bind('<KP_Enter>', lambda e: self.finish_edit(move=True))
+        for key in ('Return','KP_Enter','Tab','ISO_Left_Tab'):
+            horizontal=key in ('Tab','ISO_Left_Tab')
+            self.editor.bind(f'<{key}>',lambda e, h=horizontal: self.finish_edit(
+                move=True,horizontal=h,reverse=bool(e.state&1) or e.keysym=='ISO_Left_Tab'))
         self.editor.bind('<Escape>',lambda e:self.finish_edit(cancel=True))
-        self.editor.bind('<Tab>',lambda e:self.finish_edit(move=True,horizontal=True))
         self.editor.bind('<FocusOut>',lambda e:self.finish_edit())
 
-    def finish_edit(self,move=False,cancel=False,horizontal=False):
+    def finish_edit(self,move=False,cancel=False,horizontal=False,reverse=False):
         if not self.editor: return
         entry=self.editor
         value=entry.get()
@@ -643,8 +713,11 @@ class App(tk.Tk):
             self.checkpoint()
             self.sheet.set(*self.active,value)
             self.changed()
-        r,c=self.active
-        self.select(r+(move and not horizontal),c+(move and horizontal))
+        if move:
+            step=-1 if reverse else 1
+            self.move_selection(0,step) if horizontal else self.move_selection(step,0)
+        else:
+            self.select(*self.active)
         if move or cancel: self.canvas.focus_set()
         return 'break'
 
@@ -652,7 +725,9 @@ class App(tk.Tk):
         self.checkpoint()
         self.sheet.set(*self.active,self.formula.get())
         self.changed()
+        if e is not None: self.move_selection(-1 if e.state&1 else 1,0)
         self.canvas.focus_set()
+        return 'break'
 
     def scroll_y(self,kind,value,unit=None):
         self.hide_context_menu()
@@ -873,7 +948,7 @@ class App(tk.Tk):
                 self.sheet.set(r,c,'')
                 self.sheet.styles.pop(address(r,c),None)
         self.changed()
-        self.select(*self.active,extend=True)
+        self.refresh_selection()
         return 'break'
 
     def paste(self,e=None):
@@ -1017,13 +1092,14 @@ class App(tk.Tk):
             self.checkpoint()
             for key,value in changes.items(): self.sheet.set(*coordinates(key),value)
             self.changed()
-            self.select(*self.active,extend=True)
+            self.refresh_selection()
         return len(changes)
 
     def persist_session(self):
         self.update_idletasks()
         state={'sheet':self.sheet.dump(),'path':self.path,'dirty':self.dirty,
                'active':self.active,'anchor':self.anchor,'top':self.top,'left':self.left,
+               'keyboard_end':self._keyboard_end,
                'geometry':self.geometry(),'maximized':self.state()=='zoomed',
                'undo':self.undo_stack,'redo':self.redo_stack,'search':self.search_text,'recent':self.recent_files}
         self.state_path.parent.mkdir(parents=True,exist_ok=True)
@@ -1042,6 +1118,8 @@ class App(tk.Tk):
             self.left=max(0,int(state.get('left',0)))
             self.select(*state.get('active',[0,0]))
             self.anchor=tuple(state.get('anchor',self.active))
+            if state.get('keyboard_end') is not None:
+                self._keyboard_end=tuple(state['keyboard_end'])
             self.undo_stack=state.get('undo',[])[-100:]
             self.redo_stack=state.get('redo',[])[-100:]
             self.search_text=state.get('search','')
