@@ -1,5 +1,13 @@
 # Release history
 
+## 1.0.0, package revision 2 — 2026-11-08
+
+- Move whole-row selections with Up and Down and whole-column selections with Left and Right.
+- Move left with Shift+Tab and commit an edit and move up with Shift+Enter.
+- Extend selections to column A, column Z, row 1, or the last working row with Ctrl+Shift+Arrow. Keep the active cell fixed while adjusting the selection.
+- Publish Fedora 44 RPM and Ubuntu 26.04 DEB packages with the application version held at 1.0.0.
+- Verify both package payloads and run focused Tk navigation checks against the installed Fedora RPM.
+
 ## 1.0.0 — 2026-11-06
 
 - Use a consistent desktop identity and existing application icons for GNOME.
