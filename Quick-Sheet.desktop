@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Quick-Sheet
-Comment=A quick single-sheet spreadsheet
+Comment=A lightweight spreadsheet with multiple worksheets
 Exec=quick-sheet
 Icon=com.greenfinch628.QuickSheet
 Terminal=false

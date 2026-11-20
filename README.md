@@ -1,6 +1,6 @@
 # Quick-Sheet
 
-A lightweight, single-sheet Python/Tk spreadsheet for Windows and Fedora. The core uses the standard library; XLSX import/export uses optional openpyxl.
+A lightweight Python/Tk spreadsheet with multiple worksheets for Windows and Fedora. The core uses the standard library; XLSX import/export uses optional openpyxl.
 
 ## Run and install Excel support
 
@@ -40,7 +40,7 @@ Both source and installed launchers retain the `WAYLAND_DISPLAY` workaround to u
 - Example: `=IF(A1>0,ROUND(A1*$B$1,2),0)`. Numeric aggregates ignore text and blanks. COUNTA counts nonempty values. Errors/cycles display `#ERROR`.
 - Values recalculate when displayed after edits. TODAY/NOW use local machine time and refresh the view every 30 seconds. Date functions return spreadsheet serial values; apply Date or Date/time formatting.
 - The Functions dropdown next to the formula bar lists Auto Sum, Sum, Average, Min, Max, Count, CountA, ABS, Today, and Now, in that order. Sum through CountA immediately place their formula in the active cell, automatically using consecutive nonempty cells above it in the same column. The range stops at the first blank, or at row 2 when the first row is frozen (otherwise row 1). With no cells above to use, the destination stays unchanged. ABS, Today, and Now insert an editable template; Enter applies it. IF and ROUND remain available by typing formulas. Right-click the formula bar for Cut, Copy, Paste, and Enter.
-- Auto Sum is a custom running-total mode for columns A and B. Choose it to place `=AUTOSUM(A1:A1)` in B1 and select A1, or `=AUTOSUM(A2:A2)` in B2 and select A2 when row 1 is frozen. Type each number and press Enter to continue down column A; the formula's endpoint and total update with every committed entry. Existing column A entries are included immediately. Blanks and text do not add to the total, and entries after gaps still count. Edits, pasted ranges, cuts, and deletion of trailing entries also update the total. Other columns do not extend the range. Overwriting the total stops its automatic tracking; Clear Sheet removes it. Activation and entries support undo/redo. Native `.mini` files and session recovery retain live Auto Sum; XLSX exports use a standard SUM over the current range, and CSV/TSV export the current total.
+- Auto Sum is a custom running-total mode for columns A and B. Choose it to place `=AUTOSUM(A1:A1)` in B1 and select A1, or `=AUTOSUM(A2:A2)` in B2 and select A2 when row 1 is frozen. Type each number and press Enter to continue down column A; the formula's endpoint and total update with every committed entry. Existing column A entries are included immediately. Blanks and text do not add to the total, and entries after gaps still count. Edits, pasted ranges, cuts, and deletion of trailing entries also update the total. Other columns do not extend the range. Overwriting the total stops its automatic tracking; Clear Sheet removes it. Activation and entries support undo/redo. Native `.qsheet` and legacy `.mini` files and session recovery retain live Auto Sum; XLSX exports use a standard SUM over the current range, and CSV/TSV export the current total.
 - Right-click a cell and choose Sum to total every cell above it in the same column, including cells above gaps. Empty cells contribute zero; text is ignored. The formula starts at row 2 when the first row is frozen, otherwise row 1, and ends immediately above the destination. It includes hidden rows and updates when source cells change. With no data rows above the destination, Sum inserts zero. Toggling Freeze First Row affects newly created sums; existing formula ranges remain unchanged and can be edited in the formula bar or replaced by choosing Sum again. The toolbar Sum button applies the same operation to the active cell.
 
 ## Formatting and grid
@@ -59,9 +59,9 @@ Ctrl+F opens Find, F3 finds next, and Ctrl+H opens Replace. Search is case-insen
 
 ## Files and recovery
 
-Ctrl+O opens `.mini`, CSV, TSV, or XLSX. Ctrl+S saves; Ctrl+Shift+S opens Save As with all four formats. File > Recent files retains up to ten paths in the local session.
+Ctrl+O opens `.qsheet`, `.mini`, CSV, TSV, or XLSX. Ctrl+S saves; Ctrl+Shift+S opens Save As with all five formats. File > Recent files retains up to ten paths in the local session.
 
-- `.mini` is the full-fidelity Quick-Sheet format, including styles, dimensions, fonts, and filters.
+- `.qsheet` is the full-workbook Quick-Sheet format, including all worksheets, styles, dimensions, fonts, and filters. Legacy `.mini` retains one worksheet.
 - CSV/TSV import handles quoted fields and UTF-8 BOMs. Export writes displayed values, including filtered rows. Saving with formulas/styles asks before using a values-only format.
 - XLSX imports the active worksheet, formulas, supported formats/styles, sizes, and a frozen first row. It opens as an unsaved import so the original workbook is protected. Save As creates a single-sheet workbook. Other tabs, charts, macros, merges, and unsupported Excel features are not retained. Excel may recalculate formulas when opening a saved workbook. Import is limited to one million cells.
 - New/Open/Import ask before discarding unsaved work. Named saves use a temporary file and replacement so failed writes retain the original.
@@ -132,3 +132,25 @@ On Scopuli the updater reads local RPMs; elsewhere it retrieves available RPMs o
 Migration copies session/settings without replacing existing user data, backs up recognized obsolete launchers under `~/.local/share/quick-sheet/migration-backups/`, updates GNOME favorites, and removes only known launcher files or symlinks. Customized launchers are reported and retained. It never deletes the source repository, original session, icons, spreadsheets, or other user-created files. Backups contain the old favorite-app list and launcher if rollback is needed. Machine-specific source-host overrides belong in the local environment, not Git.
 
 Before publishing, run the tests, inspect both packages, then commit the complete release and packages and push the same commit to GitHub and Gitea.
+
+
+## Multiple worksheets
+
+Use the bottom tabs to select a worksheet and **+** to create one. Double-click a
+tab to rename it. Right-click a tab to create, rename, duplicate, or delete a
+worksheet. Drag a tab to another tab to reorder it. The Worksheets menu also
+provides sheet actions and a list of every worksheet when the tabs get crowded. At least one worksheet is
+always retained; deleting a worksheet requires confirmation and cannot be undone.
+Each worksheet keeps its own cell undo/redo history, selection, scroll position,
+formatting, dimensions, filters, and formulas. Formula references remain local to
+the worksheet; references between worksheets are not supported.
+
+Save as **Quick-Sheet workbook (.qsheet)** to retain all worksheets, names, order,
+and the selected tab. This native format is versioned UTF-8 JSON and needs no
+extra dependencies. Existing `.mini` files still open as a single worksheet.
+Session recovery retains the entire workbook and individual worksheet histories.
+CSV, TSV, legacy `.mini`, and Excel export save the active worksheet only. When
+multiple worksheets exist, exporting to those formats leaves the workbook's
+save path and unsaved status intact; save as `.qsheet` to save the whole workbook.
+CSV/TSV retain their existing values-only behavior. Excel import continues to
+import only the active Excel worksheet.

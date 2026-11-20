@@ -18,7 +18,7 @@ class ReleaseUITests(unittest.TestCase):
         app = self.app
         self.assertEqual(app.winfo_class(), 'Quicksheet')
         labels = [app.menubar.entrycget(i, 'label') for i in range(app.menubar.index('end') + 1) if app.menubar.type(i) == 'cascade']
-        self.assertEqual(labels, ['File', 'Edit', 'Search', 'Format', 'Data', 'Tools', 'Help'])
+        self.assertEqual(labels, ['File', 'Edit', 'Search', 'Format', 'Data', 'Tools', 'Worksheets', 'Help'])
         menu = app.nametowidget(app.menubar.entrycget(app.menubar.index('end'), 'menu'))
         self.assertEqual(menu.entrycget(0, 'label'), 'About Quick-Sheet')
         menu.invoke(0)

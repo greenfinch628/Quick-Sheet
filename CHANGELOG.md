@@ -1,5 +1,17 @@
 # Release history
 
+## 1.1.0 — 2026-11-20
+
+- Add bottom worksheet tabs with creation, selection, renaming, duplication, deletion, and drag-and-drop reordering.
+- Add a Worksheets menu for sheet actions and access to every worksheet.
+- Preserve each worksheet's selection, scroll position, formatting, filters, and undo/redo history.
+- Add the versioned `.qsheet` workbook format to retain all worksheets, names, order, and the active worksheet without additional dependencies.
+- Restore complete workbooks and worksheet histories on normal session recovery; continue opening legacy single-sheet sessions and `.mini` files.
+- Retain CSV/TSV and Excel active-worksheet import/export; warn before exporting a multi-worksheet workbook to a single-sheet format and retain the workbook's unsaved state.
+- Update documentation, desktop description, and workbook regression coverage.
+- Publish Fedora 44 RPM and Ubuntu 26.04 DEB packages at package revision 1; retain prior releases.
+- Validate the full suite: 120 tests, with two Windows-only checks skipped. Verify package metadata/digests and confirm both package source payloads match the release sources.
+
 ## 1.0.0, package revision 2 — 2026-11-08
 
 - Move whole-row selections with Up and Down and whole-column selections with Left and Right.

@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = (ROOT / 'VERSION').read_text().strip()
 if not re.fullmatch(r'\d+\.\d+\.\d+', VERSION):
     raise SystemExit('VERSION must contain a numeric major.minor.patch version')
-PACKAGE_REVISION = 2
+PACKAGE_REVISION = 1
 RPM_RELEASE = f'{PACKAGE_REVISION}.fc44'
 DEB_RELEASE = f'{PACKAGE_REVISION}ubuntu26.04.1'
 ID = 'com.greenfinch628.QuickSheet'
@@ -79,7 +79,7 @@ Maintainer: Bob Czys <greenfinch628@users.noreply.github.com>
 Depends: python3, python3-tk, python3-openpyxl (>= 3.1.5)
 Section: editors
 Priority: optional
-Description: Quick single-sheet spreadsheet
+Description: Lightweight workbook spreadsheet
  Spreadsheet with formulas, formatting, session recovery, and Excel import/export.
 ''')
             built = work / dest.name
@@ -90,7 +90,7 @@ Description: Quick single-sheet spreadsheet
 Name: quick-sheet
 Version: {VERSION}
 Release: {RPM_RELEASE}
-Summary: Quick single-sheet spreadsheet
+Summary: Lightweight workbook spreadsheet
 License: LicenseRef-No-License
 URL: https://github.com/greenfinch628/Quick-Sheet
 BuildArch: noarch

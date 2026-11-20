@@ -150,7 +150,7 @@ class MenuFeatureTests(unittest.TestCase):
         a = self.app
         titles = [a.menubar.entrycget(i, 'label') for i in range(a.menubar.index('end')+1)
                   if a.menubar.type(i) == 'cascade']
-        self.assertEqual(titles, ['File', 'Edit', 'Search', 'Format', 'Data', 'Tools', 'Help'])
+        self.assertEqual(titles, ['File', 'Edit', 'Search', 'Format', 'Data', 'Tools', 'Worksheets', 'Help'])
         index = next(i for i in range(a.menubar.index('end')+1)
                      if a.menubar.type(i) == 'cascade' and a.menubar.entrycget(i, 'label') == 'Format')
         menu = a.nametowidget(a.menubar.entrycget(index, 'menu'))

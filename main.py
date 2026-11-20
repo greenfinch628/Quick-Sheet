@@ -9,7 +9,7 @@ from tkinter import ttk, filedialog, messagebox, font, simpledialog, colorchoose
 from app_info import APP_NAME, VERSION, WINDOW_CLASS, default_state_path
 from sheet import Sheet, address, coordinates
 from formulas import translate
-from fileio import read_sheet, write_sheet
+from fileio import read_sheet, write_sheet, read_workbook, write_workbook, validate_workbook
 from dialogs import Dialogs, SizeDialog
 from context_menu import ContextMenu
 from selection_drag import SelectionDrag
@@ -41,6 +41,8 @@ class App(tk.Tk):
         self.geometry('1100x720')
         self.minsize(650, 400)
         self.sheet = Sheet()
+        self.worksheets = [dict(name="Sheet1", sheet=self.sheet, view={})]
+        self.sheet_index = 0
         self.path = None
         self.dirty = False
         self.active = (0, 0)
@@ -115,6 +117,15 @@ class App(tk.Tk):
         self.hscroll.grid(row=1, column=0, sticky='ew')
         frame.rowconfigure(0, weight=1)
         frame.columnconfigure(0, weight=1)
+        self.tabs = ttk.Notebook(self, height=28)
+        self.tabs.pack(fill='x')
+        self.tabs.bind('<<NotebookTabChanged>>', self.tab_selected)
+        self.tabs.bind('<Double-Button-1>', lambda e: self.rename_worksheet())
+        self.tabs.bind('<Button-3>', self.worksheet_menu)
+        self.tabs.bind('<ButtonPress-1>', self.tab_press)
+        self.tabs.bind('<ButtonRelease-1>', self.tab_release)
+        self._tab_drag = None
+        self.rebuild_tabs()
         self.status = ttk.Label(self, padding=8)
         self.status.pack(fill='x')
         self.selection_drag=SelectionDrag(self)
@@ -166,6 +177,167 @@ class App(tk.Tk):
         if self._restored_geometry and not self._restored_maximized:
             self.geometry(self._restored_geometry)
 
+    VIEW_FIELDS = ('active', 'anchor', 'top', 'left', '_keyboard_end',
+                   'undo_stack', 'redo_stack')
+
+    def store_worksheet(self):
+        item = self.worksheets[self.sheet_index]
+        item['sheet'] = self.sheet
+        item['view'] = {key: getattr(self, key) for key in self.VIEW_FIELDS}
+
+    def settle_worksheet(self):
+        self.hide_context_menu()
+        self.selection_drag.cancel()
+        self.finish_resize()
+        self.format_decimals()
+        self.finish_edit()
+        if self.focus_get() == self.formula and self.formula.get() != self.sheet.raw(*self.active):
+            self.formula_commit()
+        self.store_worksheet()
+
+    def rebuild_tabs(self):
+        for tab in self.tabs.tabs():
+            widget = self.nametowidget(tab)
+            self.tabs.forget(tab)
+            widget.destroy()
+        for item in self.worksheets:
+            self.tabs.add(ttk.Frame(self.tabs), text=item['name'])
+        self.tabs.add(ttk.Frame(self.tabs), text='+')
+        self.tabs.select(self.sheet_index)
+
+    def tab_selected(self, event=None):
+        index = self.tabs.index('current')
+        if index == len(self.worksheets):
+            self.add_worksheet()
+        elif index != self.sheet_index:
+            self.select_worksheet(index)
+
+    def select_worksheet(self, index):
+        self.settle_worksheet()
+        self.sheet_index = index
+        item = self.worksheets[index]
+        self.sheet = item['sheet']
+        view = item['view']
+        defaults = dict(active=(0,0), anchor=(0,0), top=0, left=0,
+                        _keyboard_end=None, undo_stack=[], redo_stack=[])
+        for key in self.VIEW_FIELDS:
+            value=view.get(key, defaults[key])
+            setattr(self, key, tuple(value) if key in ('active','anchor') else value)
+        self.table_var.set(self.sheet.table)
+        self._header_axis = None
+        self.apply_fonts()
+        self.refresh_selection()
+        self.draw()
+        self.tabs.select(index)
+
+    def unique_sheet_name(self, base='Sheet'):
+        names = {item['name'].casefold() for item in self.worksheets}
+        number = 1
+        while (name := f'{base}{number}').casefold() in names:
+            number += 1
+        return name
+
+    def add_worksheet(self, duplicate=False):
+        self.settle_worksheet()
+        sheet = Sheet.from_data(json.loads(json.dumps(self.sheet.dump()))) if duplicate else Sheet()
+        name = self.unique_sheet_name(self.worksheets[self.sheet_index]['name'] + ' Copy ' if duplicate else 'Sheet')
+        index = self.sheet_index + 1
+        self.worksheets.insert(index, dict(name=name, sheet=sheet, view={}))
+        self.select_worksheet(index)
+        self.rebuild_tabs()
+        self.changed()
+
+    def rename_worksheet(self):
+        current = self.worksheets[self.sheet_index]
+        name = simpledialog.askstring('Rename worksheet', 'Worksheet name:',
+                                      initialvalue=current['name'], parent=self)
+        if name is None: return
+        name = name.strip()
+        if not name or len(name)>31 or any(c in name for c in '[]:*?/\\') or any(
+                i != self.sheet_index and item['name'].casefold()==name.casefold()
+                for i,item in enumerate(self.worksheets)):
+            self.dialogs.showerror('Invalid name', 'Use a unique name of 1–31 characters without []:*?/\\.')
+            return
+        if name == current['name']: return
+        current['name'] = name
+        self.rebuild_tabs()
+        self.changed()
+
+    def delete_worksheet(self):
+        if len(self.worksheets)==1: return
+        name=self.worksheets[self.sheet_index]['name']
+        if not self.dialogs.askyesno('Delete worksheet', f'Delete "{name}"? This cannot be undone.'): return
+        self.settle_worksheet()
+        self.worksheets.pop(self.sheet_index)
+        self.sheet_index = min(self.sheet_index, len(self.worksheets)-1)
+        # Switch without storing the deleted sheet into its neighbor.
+        item=self.worksheets[self.sheet_index]
+        self.sheet=item['sheet']
+        self.select_worksheet_after_delete(item)
+        self.rebuild_tabs()
+        self.changed()
+
+    def select_worksheet_after_delete(self, item):
+        self._header_axis=None
+        view=item['view']
+        for key,default in dict(active=(0,0),anchor=(0,0),top=0,left=0,
+                                _keyboard_end=None,undo_stack=[],redo_stack=[]).items():
+            value=view.get(key,default)
+            setattr(self,key,tuple(value) if key in ('active','anchor') else value)
+        self.table_var.set(self.sheet.table)
+        self.apply_fonts()
+        self.refresh_selection()
+        self.draw()
+
+    def worksheet_menu(self, event):
+        try: index=self.tabs.index('@%s,%s' % (event.x,event.y))
+        except tk.TclError: return
+        if index==len(self.worksheets): return
+        self.select_worksheet(index)
+        menu=tk.Menu(self,tearoff=False)
+        menu.add_command(label='New worksheet',command=self.add_worksheet)
+        menu.add_command(label='Rename…',command=self.rename_worksheet)
+        menu.add_command(label='Duplicate',command=lambda:self.add_worksheet(True))
+        menu.add_command(label='Delete',command=self.delete_worksheet,
+                         state='normal' if len(self.worksheets)>1 else 'disabled')
+        try: menu.tk_popup(event.x_root,event.y_root)
+        finally: menu.grab_release()
+
+    def tab_press(self, event):
+        try: self._tab_drag=self.tabs.index('@%s,%s' % (event.x,event.y))
+        except tk.TclError: self._tab_drag=None
+
+    def tab_release(self, event):
+        source=self._tab_drag
+        self._tab_drag=None
+        try: target=self.tabs.index('@%s,%s' % (event.x,event.y))
+        except tk.TclError: return
+        if source is None or source>=len(self.worksheets): return
+        target=min(target,len(self.worksheets)-1)
+        if source==target: return
+        self.settle_worksheet()
+        selected=self.worksheets[self.sheet_index]
+        self.worksheets.insert(target,self.worksheets.pop(source))
+        self.sheet_index=self.worksheets.index(selected)
+        self.rebuild_tabs()
+        self.changed()
+
+    def workbook_data(self):
+        self.store_worksheet()
+        return {'format':'quick-sheet-workbook', 'version':1, 'active':self.sheet_index,
+                'worksheets':[{'name':item['name'], 'sheet':item['sheet'].dump()}
+                              for item in self.worksheets]}
+
+    def load_workbook(self, data, path=None):
+        data=validate_workbook(data)
+        items=[dict(name=item['name'],sheet=Sheet.from_data(item['sheet']),view={})
+               for item in data['worksheets']]
+        index=data['active']
+        self.load(items[index]['sheet'],path)
+        self.worksheets=items
+        self.sheet_index=index
+        self.rebuild_tabs()
+
     def recalculate_clock(self):
         self.draw()
         self.after(30000,self.recalculate_clock)
@@ -211,6 +383,19 @@ class App(tk.Tk):
         tools.add_checkbutton(label='Freeze First Row', variable=self.table_var,
                               command=self.table_toggle)
         self.menubar.add_cascade(label='Tools', menu=tools)
+        worksheets_menu=tk.Menu(self.menubar,tearoff=False)
+        self.menubar.add_cascade(label='Worksheets',menu=worksheets_menu)
+        def populate_worksheets():
+            worksheets_menu.delete(0,'end')
+            worksheets_menu.add_command(label='New worksheet',command=self.add_worksheet)
+            worksheets_menu.add_command(label='Rename…',command=self.rename_worksheet)
+            worksheets_menu.add_command(label='Duplicate',command=lambda:self.add_worksheet(True))
+            worksheets_menu.add_command(label='Delete',command=self.delete_worksheet,
+                                        state='normal' if len(self.worksheets)>1 else 'disabled')
+            worksheets_menu.add_separator()
+            for index,item in enumerate(self.worksheets):
+                worksheets_menu.add_command(label=item['name'],command=lambda i=index:self.select_worksheet(i))
+        worksheets_menu.configure(postcommand=populate_worksheets)
         help_menu = tk.Menu(self.menubar, tearoff=False)
         help_menu.add_command(label='About Quick-Sheet', command=self.about)
         self.menubar.add_cascade(label='Help', menu=help_menu)
@@ -1097,7 +1282,8 @@ class App(tk.Tk):
 
     def persist_session(self):
         self.update_idletasks()
-        state={'sheet':self.sheet.dump(),'path':self.path,'dirty':self.dirty,
+        self.settle_worksheet()
+        state={'workbook':self.workbook_data(), 'worksheet_views':[item['view'] for item in self.worksheets], 'sheet':self.sheet.dump(),'path':self.path,'dirty':self.dirty,
                'active':self.active,'anchor':self.anchor,'top':self.top,'left':self.left,
                'keyboard_end':self._keyboard_end,
                'geometry':self.geometry(),'maximized':self.state()=='zoomed',
@@ -1112,7 +1298,12 @@ class App(tk.Tk):
         try:
             state=json.loads(self.state_path.read_text(encoding='utf-8'))
             sheet=Sheet.from_data(state['sheet'])
-            self.load(sheet,state.get('path'))
+            if 'workbook' in state:
+                self.load_workbook(state['workbook'],state.get('path'))
+                for item,view in zip(self.worksheets,state.get('worksheet_views',[])):
+                    item['view']=view
+            else:
+                self.load(sheet,state.get('path'))
             self.dirty=bool(state.get('dirty'))
             self.top=max(0,int(state.get('top',0)))
             self.left=max(0,int(state.get('left',0)))
@@ -1190,6 +1381,9 @@ class App(tk.Tk):
 
     def load(self,sheet,path):
         self.sheet,self.path,self.dirty=sheet,path,False
+        self.worksheets=[dict(name="Sheet1",sheet=sheet,view={})]
+        self.sheet_index=0
+        self.rebuild_tabs()
         self.undo_stack.clear()
         self.redo_stack.clear()
         self.top=self.left=0
@@ -1210,12 +1404,16 @@ class App(tk.Tk):
         self.update_recent_menu()
 
     def open(self):
-        path=self.dialogs.askopenfilename(filetypes=[('Sheets','*.mini *.csv *.tsv *.xlsx'),('All files','*.*')])
+        path=self.dialogs.askopenfilename(filetypes=[('Sheets','*.qsheet *.mini *.csv *.tsv *.xlsx'),('All files','*.*')])
         if path: self.open_path(path)
 
     def open_path(self,path):
         if not self.may_discard(): return
         try:
+            if Path(path).suffix.lower()=='.qsheet':
+                self.load_workbook(read_workbook(path),str(path))
+                self.remember_file(path)
+                return
             sheet=read_sheet(path)
             native=Path(path).suffix.lower()=='.mini'
             self.load(sheet,str(path) if native else None)
@@ -1236,13 +1434,23 @@ class App(tk.Tk):
         self.finish_edit()
         path=self.path if not save_as else None
         if not path:
-            path=self.dialogs.asksaveasfilename(defaultextension='.mini',filetypes=[('Quick-Sheet','*.mini'),('Excel','*.xlsx'),('CSV (values only)','*.csv'),('TSV (values only)','*.tsv')])
+            path=self.dialogs.asksaveasfilename(defaultextension='.qsheet',filetypes=[('Quick-Sheet workbook','*.qsheet'),('Legacy single sheet','*.mini'),('Excel','*.xlsx'),('CSV (values only)','*.csv'),('TSV (values only)','*.tsv')])
         if not path: return False
         ext=Path(path).suffix.lower()
+        if ext!='.qsheet' and len(self.worksheets)>1:
+            if not self.dialogs.askyesno('Active worksheet only', 'This format exports only the active worksheet. Use .qsheet to save the complete workbook. Continue exporting?'): return False
+            try:
+                write_sheet(self.sheet,path)
+                self.remember_file(path)
+                return False  # Export does not satisfy saving the complete workbook.
+            except Exception as error:
+                self.dialogs.showerror('Could not export worksheet',str(error))
+                return False
         if ext in ('.csv','.tsv') and (self.sheet.styles or self.sheet.column_decimals or any(v.startswith('=') for v in self.sheet.cells.values())):
             if not self.dialogs.askyesno('Values only','CSV/TSV saves displayed values only. Formulas and formatting will not be retained in this file. Continue?'): return False
         try:
-            write_sheet(self.sheet,path)
+            if ext=='.qsheet': write_workbook(self.workbook_data(),path)
+            else: write_sheet(self.sheet,path)
             self.path,self.dirty=str(path),False
             self.remember_file(path)
             self.title(str(path)+' — Quick-Sheet')

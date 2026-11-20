@@ -88,3 +88,46 @@ def write_sheet(sheet,path):
         temp.replace(path)
     finally:
         if temp.exists(): temp.unlink()
+
+
+def validate_workbook(data):
+    """Validate the versioned native envelope before changing application state."""
+    if not isinstance(data, dict) or data.get('format') != 'quick-sheet-workbook' or data.get('version') != 1:
+        raise ValueError('Unsupported Quick-Sheet workbook format or version')
+    items=data.get('worksheets')
+    if not isinstance(items,list) or not items:
+        raise ValueError('A workbook must contain at least one worksheet')
+    names=set()
+    for item in items:
+        if not isinstance(item,dict): raise ValueError('Invalid worksheet')
+        name=item.get('name')
+        if (not isinstance(name,str) or not name.strip() or len(name)>31
+                or any(c in name for c in '[]:*?/\\') or name.casefold() in names):
+            raise ValueError('Invalid or duplicate worksheet name')
+        names.add(name.casefold())
+        if not isinstance(item.get('sheet'),dict): raise ValueError('Invalid worksheet data')
+        Sheet.from_data(item['sheet'])
+    active=data.get('active',0)
+    if type(active) is not int or not 0<=active<len(items):
+        raise ValueError('Invalid active worksheet')
+    return dict(data,active=active)
+
+
+def read_workbook(path):
+    return validate_workbook(json.loads(Path(path).read_text(encoding='utf-8-sig')))
+
+
+def write_workbook(data,path):
+    data=validate_workbook(data)
+    path=Path(path)
+    # Unique sibling temporary file makes replacement atomic on the same filesystem.
+    import tempfile
+    temp=None
+    try:
+        with tempfile.NamedTemporaryFile(mode='w',encoding='utf-8',dir=path.parent,
+                                         prefix=path.name+'.',suffix='.tmp',delete=False) as stream:
+            temp=Path(stream.name)
+            json.dump(data,stream,ensure_ascii=False,indent=2)
+        temp.replace(path)
+    finally:
+        if temp is not None: temp.unlink(missing_ok=True)
