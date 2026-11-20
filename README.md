@@ -9,10 +9,14 @@ Python 3.10+ with Tk is required. The launchers prefer a local `.venv` when pres
 Windows PowerShell, from the application directory:
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe main.py
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\setup_windows.ps1
 ```
+
+The Windows setup script uses the folder containing the script, so it can run from any working directory. It creates or reuses `.venv`, checks Python 3.10+ and Tkinter, installs `requirements.txt`, and creates shortcuts for the current user's desktop and Start menu with the Quick-Sheet icon. It reuses an existing shortcut to this installation, including aliases such as `q-s`. Run it again after updating the code to install any required dependencies. The execution-policy option applies only to that PowerShell process.
+
+For a new computer, install Python with Tcl/Tk support, clone or download this repository, and run the command above from its folder. Start the app using a shortcut or `Launch.vbs`. Shortcuts are generated with that computer's paths. Recreate `.venv` on each computer. Keep the application folder in place after setup.
+
+Use `-PythonExecutable 'C:\path\to\python.exe'` to choose Python when creating a new environment. Use `-NoDesktopShortcut` or `-NoStartMenuShortcut` to omit either shortcut. Setup does not require administrator access. Python installation, repository updates, and application launch are separate steps. Existing workbook files and recovery settings are preserved.
 
 Fedora (install `python3-tkinter` if missing):
 

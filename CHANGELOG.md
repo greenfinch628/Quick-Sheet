@@ -1,5 +1,13 @@
 # Release history
 
+## 1.1.1 — 2026-11-20
+
+- Add `setup_windows.ps1` to create or reuse the local Python environment, verify Python 3.10+ and Tkinter, and install the application requirements.
+- Generate current-user desktop and Start menu shortcuts using the installation folder and Quick-Sheet icon, with reuse of existing shortcut aliases and protection for unrelated shortcuts.
+- Document installation on another Windows computer and optional interpreter and shortcut choices.
+- Make the Linux session migration test independent of the host platform so it also runs on Windows.
+- Verify fresh and repeated setup in a temporary path containing spaces, dependency installation, shortcut properties, alias reuse, and unrelated shortcut protection.
+
 ## 1.1.0 — 2026-11-20
 
 - Add bottom worksheet tabs with creation, selection, renaming, duplication, deletion, and drag-and-drop reordering.
