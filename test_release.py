@@ -38,7 +38,7 @@ class ReleaseStorageTests(unittest.TestCase):
             source = home / 'Applications/quick-sheet/.mini-session.json'
             source.parent.mkdir(parents=True)
             source.write_text('{"sheet": "preserve me"}')
-            with patch('app_info.Path.home', return_value=home), patch.dict(os.environ, {'XDG_DATA_HOME': str(home / 'data')}), patch('app_info.__file__', str(home / 'installed/app_info.py')):
+            with patch('app_info.Path.home', return_value=home), patch.dict(os.environ, {'XDG_DATA_HOME': str(home / 'data')}), patch('app_info.__file__', str(home / 'installed/app_info.py')), patch('app_info.sys.platform', 'linux'):
                 target = app_info.default_state_path()
                 self.assertEqual(target.read_bytes(), source.read_bytes())
                 target.write_text('newer settings')
