@@ -3,3 +3,5 @@ __pycache__/
 .mini-session.tmp
 
 .venv/
+
+packages/fedora-45/

@@ -1,5 +1,9 @@
 # Release history
 
+## Unreleased
+
+- Preserve the existing local Fedora 45 RPM outside source control; exclude generated Fedora 45 packages from source commits.
+
 ## 1.1.1 — 2026-11-20
 
 - Add `setup_windows.ps1` to create or reuse the local Python environment, verify Python 3.10+ and Tkinter, and install the application requirements.
