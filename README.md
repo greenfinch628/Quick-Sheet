@@ -158,3 +158,5 @@ multiple worksheets exist, exporting to those formats leaves the workbook's
 save path and unsaved status intact; save as `.qsheet` to save the whole workbook.
 CSV/TSV retain their existing values-only behavior. Excel import continues to
 import only the active Excel worksheet.
+
+Default numeric display uses two decimal places. Change it under **Edit → Settings → Preferences → Default Decimal Places** (0–10). The setting persists between sessions and applies across worksheets; explicit cell or column precision takes precedence. Stored values and calculations retain their precision. CSV/TSV export continues to save displayed values, as indicated by the export warning; use `.qsheet` to preserve original values and formulas.

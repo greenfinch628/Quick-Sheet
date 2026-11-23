@@ -106,15 +106,15 @@ class UIUpdateTests(unittest.TestCase):
         s.set(0,0,'12.345'); s.set(500,0,'7.25'); s.set(0,1,'3.14159')
         s.set(1,0,'00123'); s.styles['A2']={'format':'Text'}
         s.set(2,0,'2.5'); s.styles['A3']={'format':'Currency','decimals':1}
-        self.assertEqual(a.dec.get(),0); self.assertEqual(s.display(0,0),'12')
+        self.assertEqual(a.dec.get(),2); self.assertEqual(s.display(0,0),'12.35')
         a.decimal_control.delete(0,'end'); a.decimal_control.insert(0,'2')
         a.after(400,a.quit); a.mainloop()
         self.assertEqual(s.display(0,0),'12.35'); self.assertEqual(s.display(500,0),'7.25')
-        self.assertEqual(s.display(0,1),'3'); self.assertEqual(s.display(1,0),'00123')
+        self.assertEqual(s.display(0,1),'3.14'); self.assertEqual(s.display(1,0),'00123')
         self.assertEqual(s.display(2,0),'$2.50')
         s.set(700,0,'6.5'); self.assertEqual(s.display(700,0),'6.50')
         self.assertEqual(s.raw(0,0),'12.345')
-        a.undo(); self.assertEqual(a.sheet.display(0,0),'12'); self.assertEqual(a.dec.get(),0)
+        a.undo(); self.assertEqual(a.sheet.display(0,0),'12.35'); self.assertEqual(a.dec.get(),2)
         a.redo(); self.assertEqual(a.sheet.display(0,0),'12.35'); self.assertEqual(a.dec.get(),2)
         a.dec.set(0); a.format_decimals()
         self.assertEqual(a.sheet.display(0,0),'12'); self.assertEqual(a.sheet.display(2,0),'$2')
@@ -122,8 +122,8 @@ class UIUpdateTests(unittest.TestCase):
     def test_precision_entry_follows_original_column_when_selection_changes(self):
         a=self.app; a.sheet.set(0,0,'1.234'); a.sheet.set(0,1,'2.345')
         a.dec.set(3); a.select(0,1)
-        self.assertEqual(a.sheet.display(0,0),'1.234'); self.assertEqual(a.sheet.display(0,1),'2')
-        self.assertEqual(a.dec.get(),0)
+        self.assertEqual(a.sheet.display(0,0),'1.234'); self.assertEqual(a.sheet.display(0,1),'2.35')
+        self.assertEqual(a.dec.get(),2)
 
     def test_clear_sheet_resets_all_formatting_and_is_undoable(self):
         a=self.app; a.path='named.mini'
@@ -133,7 +133,7 @@ class UIUpdateTests(unittest.TestCase):
         before=json.dumps(a.sheet.dump(),sort_keys=True)
         a.clear_sheet()
         self.assertEqual(a.sheet.dump(),Sheet().dump()); self.assertEqual(a.path,'named.mini')
-        self.assertTrue(a.dirty); self.assertEqual(a.dec.get(),0)
+        self.assertTrue(a.dirty); self.assertEqual(a.dec.get(),2)
         a.undo(); self.assertEqual(json.dumps(a.sheet.dump(),sort_keys=True),before)
         a.redo(); self.assertEqual(a.sheet.dump(),Sheet().dump())
 

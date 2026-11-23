@@ -112,7 +112,7 @@ class FileTests(unittest.TestCase):
             for ext in ('.csv','.tsv'):
                 target=Path(folder)/('data'+ext); write_sheet(s,target); restored=read_sheet(target)
                 self.assertEqual(restored.raw(2,0),'two\tfields\nand lines')
-                self.assertEqual(restored.raw(0,1),'$3.00'); self.assertEqual(restored.raw(1,1),'5')
+                self.assertEqual(restored.raw(0,1),'$3.00'); self.assertEqual(restored.raw(1,1),'5.00')
     def test_failed_save_preserves_original(self):
         import tempfile
         from pathlib import Path

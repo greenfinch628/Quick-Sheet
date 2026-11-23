@@ -73,7 +73,7 @@ class AppTests(unittest.TestCase):
         a.sheet.set(0,0,'Header')
         a.sheet.set(1,0,'27')
         a.sheet.table=True
-        a.sheet.filters={'0':'27'}
+        a.sheet.filters={'0':'27.00'}
         a.sheet.cell_size=14
         a.select(1,0)
         a.edit('28')
@@ -84,7 +84,7 @@ class AppTests(unittest.TestCase):
         self.app.update()
         b=self.app
         self.assertEqual(b.sheet.raw(1,0),'28')
-        self.assertEqual(b.sheet.filters,{'0':'27'})
+        self.assertEqual(b.sheet.filters,{'0':'27.00'})
         self.assertEqual(b.sheet.cell_size,14)
         self.assertEqual(b.active,(1,0))
         self.assertEqual(b.left,2)
@@ -99,7 +99,7 @@ class AppTests(unittest.TestCase):
             a.import_csv()
         self.assertEqual(a.sheet.raw(1,0),'A, B')
         self.assertEqual(a.sheet.raw(2,0),'semi;colon')
-        self.assertEqual(list(csv.reader(io.StringIO(a.sheet.csv_text())))[1],['A, B','12'])
+        self.assertEqual(list(csv.reader(io.StringIO(a.sheet.csv_text())))[1],['A, B','12.00'])
         titles=[a.menubar.entrycget(i,'label') for i in range(a.menubar.index('end')+1) if a.menubar.type(i)=='cascade']
         self.assertEqual(titles,['File','Edit','Search','Format','Data','Tools','Worksheets','Help'])
 

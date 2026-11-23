@@ -38,6 +38,7 @@ def read_sheet(path):
                 elif '$' in fmt: st['format']='Currency'
                 elif fmt=='@': st['format']='Text'
                 elif fmt!='General': st['format']='Decimal'
+                if fmt not in ('General','@') and not cell.is_date: st['decimals']=0
                 if '.' in fmt: st['decimals']=len(re.match(r'[0#]*',fmt.split('.',1)[1])[0])
                 st.update(bold=bool(cell.font.bold),italic=bool(cell.font.italic))
                 if cell.alignment.horizontal in ('left','center','right'): st['alignment']=cell.alignment.horizontal

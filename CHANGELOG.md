@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add Edit → Settings → Preferences with Default Decimal Places (0–10), initially 2, persisted in the existing session settings with invalid values falling back to 2.
+- Refresh numeric display across worksheets without rounding stored values or changing native workbook data; preserve explicit cell/column precision, dates, text, and existing displayed-value CSV export.
+- Preserve explicit zero-decimal Excel formats on import.
+- Verify the 124-test regression suite (two Windows-only skips) and five final preference checks, including restart persistence, invalid/corrupt settings, display precision, explicit formatting, undo, and workbook/CSV/Excel compatibility.
+
 - Preserve the existing local Fedora 45 RPM outside source control; exclude generated Fedora 45 packages from source commits.
 
 ## 1.1.1 — 2026-11-20

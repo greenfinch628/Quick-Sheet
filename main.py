@@ -21,6 +21,15 @@ class App(tk.Tk):
     HEADER_BG = '#dce4ed'
     DROPDOWN_WIDTH = 24
 
+    @property
+    def sheet(self):
+        return self._sheet
+
+    @sheet.setter
+    def sheet(self, sheet):
+        sheet.default_decimal_places = getattr(self, 'default_decimal_places', 2)
+        self._sheet = sheet
+
     def __init__(self, state_path=None):
         if sys.platform=='win32':
             import ctypes
@@ -40,6 +49,7 @@ class App(tk.Tk):
             self.iconbitmap(ico_path)
         self.geometry('1100x720')
         self.minsize(650, 400)
+        self.default_decimal_places = 2
         self.sheet = Sheet()
         self.worksheets = [dict(name="Sheet1", sheet=self.sheet, view={})]
         self.sheet_index = 0
@@ -378,6 +388,7 @@ class App(tk.Tk):
                 menu.add_separator()
                 settings = tk.Menu(menu, tearoff=False)
                 settings.add_command(label='Fonts…', command=self.fonts)
+                settings.add_command(label='Preferences…', command=self.preferences)
                 menu.add_cascade(label='Settings', menu=settings)
         tools = tk.Menu(self.menubar, tearoff=False)
         tools.add_checkbutton(label='Freeze First Row', variable=self.table_var,
@@ -668,7 +679,7 @@ class App(tk.Tk):
         style=self.sheet.style(*self.active)
         self.fmt.set(style.get('format','General'))
         self._updating_decimals=True
-        try: self.dec.set(style.get('decimals',0))
+        try: self.dec.set(style.get('decimals',self.default_decimal_places))
         finally: self._updating_decimals=False
         self._decimal_dirty=False
 
@@ -1286,6 +1297,7 @@ class App(tk.Tk):
         state={'workbook':self.workbook_data(), 'worksheet_views':[item['view'] for item in self.worksheets], 'sheet':self.sheet.dump(),'path':self.path,'dirty':self.dirty,
                'active':self.active,'anchor':self.anchor,'top':self.top,'left':self.left,
                'keyboard_end':self._keyboard_end,
+               'default_decimal_places':self.default_decimal_places,
                'geometry':self.geometry(),'maximized':self.state()=='zoomed',
                'undo':self.undo_stack,'redo':self.redo_stack,'search':self.search_text,'recent':self.recent_files}
         self.state_path.parent.mkdir(parents=True,exist_ok=True)
@@ -1297,6 +1309,8 @@ class App(tk.Tk):
         if not self.state_path.exists(): return
         try:
             state=json.loads(self.state_path.read_text(encoding='utf-8'))
+            value=state.get('default_decimal_places')
+            self.default_decimal_places=value if type(value) is int and 0<=value<=10 else 2
             sheet=Sheet.from_data(state['sheet'])
             if 'workbook' in state:
                 self.load_workbook(state['workbook'],state.get('path'))
@@ -1326,6 +1340,40 @@ class App(tk.Tk):
             self.draw()
         except Exception as error:
             self.after_idle(lambda text=str(error):self.dialogs.showerror('Could not restore previous session',text))
+
+    def set_default_decimal_places(self, value):
+        if type(value) is not int or not 0 <= value <= 10:
+            raise ValueError('Default Decimal Places must be an integer from 0 through 10')
+        self.settle_worksheet()
+        self.default_decimal_places = value
+        for item in self.worksheets:
+            item['sheet'].default_decimal_places = value
+        self.sheet.default_decimal_places = value
+        self.update_format_controls()
+        self.draw()
+        self.persist_session()
+
+    def preferences(self):
+        self.finish_edit()
+        win=self.dialogs.window('Preferences')
+        ttk.Label(win,text='Default Decimal Places').grid(row=0,column=0,padx=12,pady=12)
+        value=tk.StringVar(value=str(self.default_decimal_places))
+        control=ttk.Spinbox(win,from_=0,to=10,textvariable=value,width=4)
+        control.grid(row=0,column=1,padx=12,pady=12)
+        def apply():
+            try:
+                number=int(value.get())
+                if not 0<=number<=10: raise ValueError()
+            except ValueError:
+                self.dialogs.showerror('Invalid decimal places','Enter a whole number from 0 through 10.')
+                return
+            try: self.set_default_decimal_places(number)
+            except OSError as error:
+                self.dialogs.showerror('Could not save preferences',str(error))
+                return
+            win.destroy()
+        ttk.Button(win,text='Apply',command=apply).grid(row=1,column=1,padx=12,pady=12)
+        win.show()
 
     def fonts(self):
         self.finish_edit()

@@ -26,6 +26,7 @@ def coordinates(ref):
 
 class Sheet:
     def __init__(self):
+        self.default_decimal_places = 2
         self.cells = {}
         self.styles = {}
         self.table = False
@@ -249,7 +250,7 @@ class Sheet:
             if isinstance(value, (int, float)):
                 style = self.style(row,col)
                 fmt = style.get('format', 'General')
-                decimals = style.get('decimals', 0)
+                decimals = style.get('decimals', self.default_decimal_places)
                 if fmt == 'Percentage': return f'{value*100:.{decimals}f}%'
                 if fmt in ('Date','Date/time'):
                     from datetime import datetime, timedelta
