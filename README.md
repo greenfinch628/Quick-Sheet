@@ -2,6 +2,49 @@
 
 A lightweight Python/Tk spreadsheet with multiple worksheets for Windows and Fedora. The core uses the standard library; XLSX import/export uses optional openpyxl.
 
+## Install or upgrade on Windows 11
+
+Download the installer and its SHA-256 file from the matching
+[GitHub Release](https://github.com/greenfinch628/Quick-Sheet/releases). Compare the
+checksum with PowerShell's `Get-FileHash -Algorithm SHA256`, close Quick-Sheet
+normally, and run the installer. It installs for the current user without Python
+or Git. Open **Quick-Sheet** from Start or select the optional desktop shortcut
+during setup. Follow the same steps on each Windows computer.
+
+Run the newer installer over an existing installation. Preferences and recovery
+data live in `%APPDATA%\Quick-Sheet\session.json`. Setup copies the previous
+source session when the Quick-Sheet Start menu shortcut points to the legacy
+launcher and a per-user session does not exist. For a source installation without
+that shortcut, start and close the updated source app once before launching the
+installed copy. Keep workbook files in your chosen documents folder. To uninstall,
+choose **Quick-Sheet** in **Settings → Apps → Installed apps**. Preferences,
+recovery data, and workbook files remain available.
+
+## Build the Windows installer
+
+On Windows with Python 3.13 x64 and Inno Setup 6 installed, run these commands
+from the source checkout using PowerShell:
+
+```powershell
+py -3.13 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r packaging\windows-requirements.txt
+.\packaging\build_windows.ps1 -Python .\.venv\Scripts\python.exe
+```
+
+The installer and checksum are written to `windows-build/release`. The build
+uses `VERSION` for the installer filename and version metadata.
+
+From scopuli, dispatch a build for a branch with GitHub CLI, or choose
+**Windows installer → Run workflow** on GitHub. Pushing an annotated version
+tag starts the tagged build automatically.
+
+```sh
+gh workflow run windows-installer.yml --repo greenfinch628/Quick-Sheet --ref master
+gh run list --repo greenfinch628/Quick-Sheet --workflow windows-installer.yml
+gh run watch RUN_ID --repo greenfinch628/Quick-Sheet --exit-status
+gh run download RUN_ID --repo greenfinch628/Quick-Sheet --dir windows-release
+```
+
 ## Run and install Excel support
 
 Python 3.10+ with Tk is required. The launchers prefer a local `.venv` when present and otherwise use the system Python. Windows: double-click `Launch.vbs` or the existing shortcut. Fedora: use the RPM installation workflow below, then launch Quick-Sheet from Show Apps. For source development, run `sh launch.sh`.
@@ -69,7 +112,7 @@ Ctrl+O opens `.qsheet`, `.mini`, CSV, TSV, or XLSX. Ctrl+S saves; Ctrl+Shift+S o
 - CSV/TSV import handles quoted fields and UTF-8 BOMs. Export writes displayed values, including filtered rows. Saving with formulas/styles asks before using a values-only format.
 - XLSX imports the active worksheet, formulas, supported formats/styles, sizes, and a frozen first row. It opens as an unsaved import so the original workbook is protected. Save As creates a single-sheet workbook. Other tabs, charts, macros, merges, and unsupported Excel features are not retained. Excel may recalculate formulas when opening a saved workbook. Import is limited to one million cells.
 - New/Open/Import ask before discarding unsaved work. Named saves use a temporary file and replacement so failed writes retain the original.
-- Closing preserves unsaved work, styles, selection, filters, view, fonts, recent paths, and undo history in `$XDG_DATA_HOME/quick-sheet/session.json` (normally `~/.local/share/quick-sheet/session.json`) on Linux, or `.mini-session.json` beside the source on Windows. Legacy Linux sessions are copied automatically when no new session exists; originals are retained. A snapshot failure leaves the window open. Recovery is on normal close, not after a crash.
+- Closing preserves unsaved work, styles, selection, filters, view, fonts, recent paths, and undo history in `$XDG_DATA_HOME/quick-sheet/session.json` (normally `~/.local/share/quick-sheet/session.json`) on Linux, or `%APPDATA%/Quick-Sheet/session.json` on Windows. Legacy Linux sessions are copied automatically when no new session exists; originals are retained. A snapshot failure leaves the window open. Recovery is on normal close, not after a crash.
 
 ## Shared code and updates
 
@@ -138,8 +181,6 @@ Migration copies session/settings without replacing existing user data, backs up
 Before publishing, run the tests and inspect package metadata and payloads. Retain the established tracked Fedora 44 and DEB release packages; generated Fedora 45 packages remain outside source control. Push the same release commit and annotated `vMAJOR.MINOR.PATCH` tag to GitHub and Gitea. Upload Linux artifacts and SHA-256 checksums to the matching [GitHub Release](https://github.com/greenfinch628/Quick-Sheet/releases).
 
 On Scopuli, publish the explicitly verified RPM outputs with the existing `/usr/local/libexec/scopuli-rpm-publish` command. It signs packages with the configured Scopuli key, updates repository metadata atomically, and retains the two newest versions per application/architecture. It does not change client configuration. Fedora clients using `scopuli.repo` can discover the release with `dnf --repo=scopuli --refresh repoquery quick-sheet` and upgrade using `sudo dnf --repo=scopuli upgrade quick-sheet`. Preferences and workbooks are outside the package payload and are retained during upgrades.
-
-Release 1.2.0 provides Fedora 44/45 RPMs and an Ubuntu 26.04 DEB. A standalone Windows installer is deferred to a separate work order on nauvoo; the existing Python-based Windows setup remains available.
 
 
 ## Multiple worksheets

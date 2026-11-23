@@ -1,4 +1,5 @@
 """Integration tests for menus that stay inside the application's window."""
+import sys
 import tkinter as tk
 import unittest
 from types import SimpleNamespace
@@ -54,7 +55,7 @@ class ContextMenuTests(unittest.TestCase):
         a.canvas.event_generate('<KeyPress>', keysym='q')
         self.assertEqual(a.editor.get(), 'q')
         a.update()
-        a.editor.event_generate('<KP_Enter>')
+        a.editor.event_generate('<Return>' if sys.platform == 'win32' else '<KP_Enter>')
         self.assertEqual(a.sheet.raw(1, 2), 'q')
 
     def test_command_hides_before_action_and_runs_once(self):

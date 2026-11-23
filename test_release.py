@@ -45,6 +45,22 @@ class ReleaseStorageTests(unittest.TestCase):
                 self.assertEqual(app_info.default_state_path().read_text(), 'newer settings')
                 self.assertEqual(source.read_text(), '{"sheet": "preserve me"}')
 
+    def test_windows_session_migrates_to_appdata_without_overwriting(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            source = home / '.mini-session.json'
+            source.write_text('{"default_decimal_places": 3}', encoding='utf-8')
+            target = home / 'Roaming/Quick-Sheet/session.json'
+            with patch.dict(os.environ, {'APPDATA': str(home / 'Roaming')}), patch(
+                'app_info.__file__', str(home / 'app_info.py')
+            ), patch('app_info.sys.platform', 'win32'):
+                self.assertEqual(app_info.default_state_path(), target)
+                self.assertEqual(target.read_bytes(), source.read_bytes())
+                target.write_text('{"default_decimal_places": 0}', encoding='utf-8')
+                self.assertEqual(app_info.default_state_path(), target)
+                self.assertEqual(target.read_text(encoding='utf-8'), '{"default_decimal_places": 0}')
+                self.assertEqual(source.read_text(encoding='utf-8'), '{"default_decimal_places": 3}')
+
     def test_packaging_and_app_share_version(self):
         path = Path(__file__).parent / 'packaging/build.py'
         spec = importlib.util.spec_from_file_location('quick_sheet_build', path)

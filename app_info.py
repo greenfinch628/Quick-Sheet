@@ -11,13 +11,17 @@ VERSION = (Path(__file__).resolve().parent / 'VERSION').read_text(encoding='utf-
 
 
 def default_state_path():
-    if sys.platform != 'linux':
-        return Path(__file__).resolve().parent / '.mini-session.json'
-    target = Path(os.environ.get('XDG_DATA_HOME', Path.home() / '.local/share')) / 'quick-sheet/session.json'
-    # Copy rather than move: retain the original recovery data and repository.
+    legacy = Path(__file__).resolve().parent / '.mini-session.json'
+    if sys.platform == 'win32':
+        target = Path(os.environ.get('APPDATA') or Path.home() / 'AppData/Roaming') / APP_NAME / 'session.json'
+        candidates = [legacy]
+    elif sys.platform == 'linux':
+        target = Path(os.environ.get('XDG_DATA_HOME', Path.home() / '.local/share')) / 'quick-sheet/session.json'
+        candidates = [legacy, Path.home() / 'Applications/quick-sheet/.mini-session.json']
+    else:
+        return legacy
+    # Keep the original recovery file and any existing per-user session.
     if not target.exists():
-        candidates = [Path(__file__).resolve().parent / '.mini-session.json',
-                      Path.home() / 'Applications/quick-sheet/.mini-session.json']
         for source in candidates:
             if source.is_file():
                 target.parent.mkdir(parents=True, exist_ok=True)

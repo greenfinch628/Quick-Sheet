@@ -3,5 +3,6 @@ __pycache__/
 .mini-session.tmp
 
 .venv/
+/windows-build/
 
 packages/fedora-45/

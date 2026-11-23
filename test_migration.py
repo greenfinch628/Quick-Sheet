@@ -3,6 +3,7 @@ import ast
 import contextlib
 import io
 import os
+import sys
 from pathlib import Path
 import tempfile
 import types
@@ -38,6 +39,7 @@ class MigrationTests(unittest.TestCase):
             self.assertEqual(target.read_text(), 'newer session')
             self.assertTrue(source.exists())
 
+    @unittest.skipIf(sys.platform == 'win32', 'Exercises POSIX launcher paths and symlinks')
     def test_cleanup_only_recognized_launcher_and_symlink_with_backup(self):
         with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {}, clear=True), patch.object(self.module.shutil, 'which', return_value=None), contextlib.redirect_stdout(io.StringIO()):
             home = Path(folder)

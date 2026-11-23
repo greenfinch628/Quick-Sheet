@@ -1,5 +1,12 @@
 # Release history
 
+## 1.3.0 — 2026-11-23
+
+- Make Default Decimal Places (0–10, initially 2) available in the standalone Windows app. Display precision leaves stored numbers and formula results intact.
+- Store Windows preferences and recovery data under the current user's AppData, with migration from the source installation.
+- Add a per-user Windows 11 installer with upgrade and uninstall support, and a GitHub Actions build that produces the versioned installer and SHA-256 checksum.
+- Keep the POSIX launcher cleanup check on POSIX and exercise keyboard editing with a Windows-compatible synthetic event.
+
 ## 1.2.0 — 2026-11-23
 
 - Add Edit → Settings → Preferences with Default Decimal Places (0–10), initially 2, persisted in the existing session settings with invalid values falling back to 2.

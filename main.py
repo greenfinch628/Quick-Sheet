@@ -1526,4 +1526,8 @@ class App(tk.Tk):
 
 
 if __name__=='__main__':
-    App().mainloop()
+    if sys.platform == 'win32' and len(sys.argv) == 8 and sys.argv[1] == '--center-native':
+        from dialogs import _center_windows_dialogs
+        _center_windows_dialogs(int(sys.argv[2]), sys.argv[3], list(map(int, sys.argv[4:])))
+    else:
+        App().mainloop()

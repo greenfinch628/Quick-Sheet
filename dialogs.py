@@ -71,8 +71,11 @@ class Dialogs:
         rect=[self.owner.winfo_rootx(),self.owner.winfo_rooty(),self.owner.winfo_width(),self.owner.winfo_height()]
         with tempfile.TemporaryDirectory(prefix='quick-sheet-dialog-') as folder:
             active=Path(folder)/'active'; active.touch()
-            python=getattr(sys,'_base_executable',sys.executable)
-            process=subprocess.Popen([python,str(Path(__file__).resolve()),'--center-native',str(os.getpid()),str(active),*map(str,rect)],creationflags=subprocess.CREATE_NO_WINDOW)
+            if getattr(sys, 'frozen', False):
+                command = [sys.executable]
+            else:
+                command = [getattr(sys, '_base_executable', sys.executable), str(Path(__file__).resolve())]
+            process=subprocess.Popen([*command,'--center-native',str(os.getpid()),str(active),*map(str,rect)],creationflags=subprocess.CREATE_NO_WINDOW)
             try: yield
             finally:
                 active.unlink(missing_ok=True)
