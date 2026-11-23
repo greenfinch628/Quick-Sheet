@@ -18,7 +18,9 @@ class MigrationTests(unittest.TestCase):
         tree = ast.parse(source)
         tree.body = [node for node in tree.body if not isinstance(node, ast.Try)]
         # rpm is only required by the install path, not these file migration checks.
-        with patch.dict('sys.modules', {'rpm': types.ModuleType('rpm')}):
+        # The extracted Fedora updater must also be testable on Windows.
+        with patch.dict('sys.modules', {'rpm': types.ModuleType('rpm')}), patch(
+                'platform.freedesktop_os_release', return_value={'ID':'fedora', 'VERSION_ID':'44'}):
             cls.module = types.ModuleType('updater')
             exec(compile(tree, '<updater>', 'exec'), cls.module.__dict__)
 

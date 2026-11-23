@@ -49,7 +49,9 @@ class ReleaseStorageTests(unittest.TestCase):
         path = Path(__file__).parent / 'packaging/build.py'
         spec = importlib.util.spec_from_file_location('quick_sheet_build', path)
         module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        # This tests Linux packaging metadata even when the suite runs on Windows.
+        with patch('platform.freedesktop_os_release', return_value={'ID':'fedora', 'VERSION_ID':'44'}):
+            spec.loader.exec_module(module)
         self.assertEqual(module.VERSION, app_info.VERSION)
         self.assertIn(app_info.VERSION, module.package_path('rpm').name)
         self.assertIn(app_info.VERSION, module.package_path('deb').name)
