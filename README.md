@@ -112,7 +112,7 @@ Tests cover formulas, reference translation, editing, formatting, dimensions, so
 
 ## Releases and Linux packages
 
-`VERSION` is authoritative for Help → About and both package formats. For a packaging update that keeps the application version, increase `PACKAGE_REVISION` in `packaging/build.py`. Existing valid packages are reused; previous releases are retained and invalid existing files are reported for inspection rather than overwritten.
+`VERSION` is authoritative for Help → About, Linux package metadata, and release tags. For a packaging update that keeps the application version, increase `PACKAGE_REVISION` in `packaging/build.py`. Existing valid packages are reused; previous releases are retained and invalid existing files are reported for inspection rather than overwritten.
 
 Build from any directory:
 
@@ -120,7 +120,7 @@ Build from any directory:
 ~/Applications/quick-sheet/packaging/createQuickSheetPackages.sh
 ```
 
-The RPM builder requires `rpm-build`; DEB builds use Podman and an Ubuntu 26.04 builder (reusing the nex-editg builder when available). Pure Python application packages are `noarch` / `all`, with distribution-managed Tk and openpyxl dependencies. Outputs are under `packages/fedora-44/` and `packages/ubuntu-26.04/`. Builds never commit or push automatically.
+The RPM builder requires `rpm-build`; DEB builds use Podman and an Ubuntu 26.04 builder (reusing the nex-editg builder when available). Pure Python application packages are `noarch` / `all`, with distribution-managed Tk and openpyxl dependencies. Build RPMs on Fedora 44 or Fedora 45; the builder selects the matching release automatically. Outputs are under `packages/fedora-44/`, `packages/fedora-45/`, and `packages/ubuntu-26.04/`. Builds never commit or push automatically.
 
 Install the standalone updater on Scopuli or another Fedora computer:
 
@@ -135,7 +135,11 @@ On Scopuli the updater reads local RPMs; elsewhere it retrieves available RPMs o
 
 Migration copies session/settings without replacing existing user data, backs up recognized obsolete launchers under `~/.local/share/quick-sheet/migration-backups/`, updates GNOME favorites, and removes only known launcher files or symlinks. Customized launchers are reported and retained. It never deletes the source repository, original session, icons, spreadsheets, or other user-created files. Backups contain the old favorite-app list and launcher if rollback is needed. Machine-specific source-host overrides belong in the local environment, not Git.
 
-Before publishing, run the tests, inspect both packages, then commit the complete release and packages and push the same commit to GitHub and Gitea.
+Before publishing, run the tests and inspect package metadata and payloads. Retain the established tracked Fedora 44 and DEB release packages; generated Fedora 45 packages remain outside source control. Push the same release commit and annotated `vMAJOR.MINOR.PATCH` tag to GitHub and Gitea. Upload Linux artifacts and SHA-256 checksums to the matching [GitHub Release](https://github.com/greenfinch628/Quick-Sheet/releases).
+
+On Scopuli, publish the explicitly verified RPM outputs with the existing `/usr/local/libexec/scopuli-rpm-publish` command. It signs packages with the configured Scopuli key, updates repository metadata atomically, and retains the two newest versions per application/architecture. It does not change client configuration. Fedora clients using `scopuli.repo` can discover the release with `dnf --repo=scopuli --refresh repoquery quick-sheet` and upgrade using `sudo dnf --repo=scopuli upgrade quick-sheet`. Preferences and workbooks are outside the package payload and are retained during upgrades.
+
+Release 1.2.0 provides Fedora 44/45 RPMs and an Ubuntu 26.04 DEB. A standalone Windows installer is deferred to a separate work order on nauvoo; the existing Python-based Windows setup remains available.
 
 
 ## Multiple worksheets

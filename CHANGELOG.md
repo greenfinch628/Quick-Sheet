@@ -1,13 +1,14 @@
 # Release history
 
-## Unreleased
+## 1.2.0 — 2026-11-23
 
 - Add Edit → Settings → Preferences with Default Decimal Places (0–10), initially 2, persisted in the existing session settings with invalid values falling back to 2.
 - Refresh numeric display across worksheets without rounding stored values or changing native workbook data; preserve explicit cell/column precision, dates, text, and existing displayed-value CSV export.
 - Preserve explicit zero-decimal Excel formats on import.
-- Verify the 124-test regression suite (two Windows-only skips) and five final preference checks, including restart persistence, invalid/corrupt settings, display precision, explicit formatting, undo, and workbook/CSV/Excel compatibility.
-
-- Preserve the existing local Fedora 45 RPM outside source control; exclude generated Fedora 45 packages from source commits.
+- Validate 125 tests on each of Fedora 44 and Fedora 45 (two Windows-only skips per target), plus focused release/migration checks. Verify installed Fedora 45 RPM and Ubuntu 26.04 DEB upgrades, About version, defaults, precision, restart persistence, worksheet/CSV compatibility, and retention of user data after uninstall.
+- Support native Fedora 44 and Fedora 45 RPM build targets and select the matching target in the standalone updater. Verify unsigned local build digests with Fedora 45 RPM policy; distributed RPMs retain mandatory signature checks.
+- Publish signed Fedora 44/45 RPMs through the existing Scopuli repository and provide the Ubuntu 26.04 DEB, release artifacts, and SHA-256 checksums on GitHub. Retain previous packages according to repository policy and preserve user session/settings.
+- Defer the standalone Windows installer to a separate work order on nauvoo.
 
 ## 1.1.1 — 2026-11-20
 

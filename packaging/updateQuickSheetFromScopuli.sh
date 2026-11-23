@@ -5,6 +5,7 @@ exec /usr/bin/python3 - "$@" <<'PY'
 import ast
 import hashlib
 import os
+import platform
 from pathlib import Path
 import re
 import shutil
@@ -14,6 +15,8 @@ import sys
 import tempfile
 import time
 import rpm
+
+FEDORA_RELEASE = platform.freedesktop_os_release().get('VERSION_ID', '')
 
 
 def run(*args, **kwargs):
@@ -26,7 +29,7 @@ def output(*args):
 
 def metadata(path):
     fields = output('rpm', '-qp', '--qf', '%{NAME}\n%{EPOCHNUM}\n%{VERSION}\n%{RELEASE}\n%{ARCH}', str(path)).splitlines()
-    if len(fields) != 5 or fields[0] != 'quick-sheet' or fields[4] != 'noarch' or not fields[3].endswith('.fc44'):
+    if len(fields) != 5 or fields[0] != 'quick-sheet' or fields[4] != 'noarch' or not fields[3].endswith(f'.fc{FEDORA_RELEASE}'):
         raise RuntimeError(f'Unexpected RPM metadata: {path}')
     run('rpm', '-K', str(path))
     return tuple(fields[1:4])
@@ -90,10 +93,12 @@ def main():
         raise RuntimeError('Run as your normal user; sudo is used only for RPM installation.')
     if 'ID=fedora' not in Path('/etc/os-release').read_text():
         raise RuntimeError('This updater supports Fedora only.')
+    if FEDORA_RELEASE not in ('44', '45'):
+        raise RuntimeError('This updater supports Fedora 44 and Fedora 45.')
     home = Path.home()
     local = socket.gethostname().split('.')[0].lower() == 'scopuli'
     host = os.environ.get('QUICK_SHEET_SOURCE_HOST', 'scopuli')
-    remote_dir = 'Applications/quick-sheet/packages/fedora-44'
+    remote_dir = f'Applications/quick-sheet/packages/fedora-{FEDORA_RELEASE}'
     installed_result = subprocess.run(['rpm', '-q', '--qf', '%{EPOCHNUM}\n%{VERSION}\n%{RELEASE}', 'quick-sheet'], capture_output=True, text=True)
     installed = tuple(installed_result.stdout.splitlines()) if installed_result.returncode == 0 else None
     manual = (home / 'Applications/quick-sheet/launch.sh').exists() or (home / '.local/share/applications/Quick-Sheet.desktop').exists()

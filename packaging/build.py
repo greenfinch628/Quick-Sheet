@@ -2,6 +2,7 @@
 """Build distribution-native packages; retain and validate existing releases."""
 import argparse
 import os
+import platform
 from pathlib import Path
 import re
 import shutil
@@ -13,7 +14,9 @@ VERSION = (ROOT / 'VERSION').read_text().strip()
 if not re.fullmatch(r'\d+\.\d+\.\d+', VERSION):
     raise SystemExit('VERSION must contain a numeric major.minor.patch version')
 PACKAGE_REVISION = 1
-RPM_RELEASE = f'{PACKAGE_REVISION}.fc44'
+OS_RELEASE = platform.freedesktop_os_release()
+FEDORA = OS_RELEASE.get('VERSION_ID', '44') if OS_RELEASE.get('ID') == 'fedora' else '44'
+RPM_RELEASE = f'{PACKAGE_REVISION}.fc{FEDORA}'
 DEB_RELEASE = f'{PACKAGE_REVISION}ubuntu26.04.1'
 ID = 'com.greenfinch628.QuickSheet'
 SOURCES = ['main.py', 'app_info.py', 'context_menu.py', 'dialogs.py', 'fileio.py',
@@ -25,7 +28,7 @@ def run(*args, **kwargs):
 
 
 def package_path(kind):
-    return ROOT / 'packages' / ('fedora-44' if kind == 'rpm' else 'ubuntu-26.04') / (
+    return ROOT / 'packages' / (f'fedora-{FEDORA}' if kind == 'rpm' else 'ubuntu-26.04') / (
         f'quick-sheet-{VERSION}-{RPM_RELEASE}.noarch.rpm' if kind == 'rpm' else
         f'quick-sheet_{VERSION}-{DEB_RELEASE}_all.deb')
 
@@ -36,7 +39,8 @@ def valid(kind, path):
     try:
         if kind == 'rpm':
             info = run('rpm', '-qp', '--qf', '%{NAME} %{VERSION}-%{RELEASE} %{ARCH}', str(path), capture_output=True, text=True).stdout
-            run('rpm', '-K', str(path), capture_output=True)
+            # Build outputs are unsigned; the publisher signs and verifies them.
+            run('rpm', '-K', '--nosignature', str(path), capture_output=True)
             return info == f'quick-sheet {VERSION}-{RPM_RELEASE} noarch'
         info = run('dpkg-deb', '-f', str(path), 'Package', 'Version', 'Architecture', capture_output=True, text=True).stdout
         run('dpkg-deb', '--contents', str(path), capture_output=True)
@@ -46,6 +50,8 @@ def valid(kind, path):
 
 
 def build(kind):
+    if kind == 'rpm' and (OS_RELEASE.get('ID') != 'fedora' or FEDORA not in ('44', '45')):
+        raise SystemExit('RPM builds require Fedora 44 or Fedora 45')
     dest = package_path(kind)
     if valid(kind, dest):
         print(f'Valid package already exists: {dest}')
